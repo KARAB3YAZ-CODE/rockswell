@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { useUIStore } from "@/lib/store"
 import { supabase } from "@/lib/supabase"
@@ -35,39 +35,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { currentUser, setCurrentUser, currentCompany, setCurrentCompany } = useUIStore()
   const router = useRouter()
 
+  // Tracks which user id has already been loaded so redundant auth events
+  // (e.g. TOKEN_REFRESHED ~1s after INITIAL_SESSION) don't re-fetch and
+  // re-set the session, which would cause an app-wide re-render/reload.
+  const loadedUserIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     let mounted = true
 
-    async function init() {
-      try {
-        const session = await api.initSessionFromSupabase()
-        if (mounted && session) {
-          setCurrentUser(session.user)
-          setCurrentCompany(session.company)
-        }
-      } finally {
-        if (mounted) setLoading(false)
+    async function loadSession(userId: string) {
+      if (loadedUserIdRef.current === userId) return
+      loadedUserIdRef.current = userId
+      const restored = await api.initSessionFromSupabase()
+      if (mounted && restored) {
+        setCurrentUser(restored.user)
+        setCurrentCompany(restored.company)
       }
     }
 
-    init()
+    supabase.auth
+      .getSession()
+      .then(async ({ data }) => {
+        if (!mounted) return
+        if (data.session?.user) {
+          await loadSession(data.session.user.id)
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
+      })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
-      if (event === "SIGNED_OUT") {
+      if (event === "SIGNED_OUT" || !session?.user) {
+        loadedUserIdRef.current = null
         setCurrentUser(null)
         setCurrentCompany(null)
+        setLoading(false)
         return
       }
 
-      if (session?.user && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) {
-        const restored = await api.initSessionFromSupabase()
-        if (restored) {
-          setCurrentUser(restored.user)
-          setCurrentCompany(restored.company)
-        }
-      }
+      // Only (re)load when the signed-in user actually changes.
+      await loadSession(session.user.id)
+      if (mounted) setLoading(false)
     })
 
     return () => {
@@ -79,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const user = await api.login(email, password)
     const company = await api.getCurrentCompany()
+    loadedUserIdRef.current = user.id
     setCurrentUser(user)
     setCurrentCompany(company)
   }, [setCurrentUser, setCurrentCompany])
@@ -89,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await api.logout()
+    loadedUserIdRef.current = null
     setCurrentUser(null)
     setCurrentCompany(null)
     router.push("/login")
