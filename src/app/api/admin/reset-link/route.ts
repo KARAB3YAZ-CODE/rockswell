@@ -38,7 +38,9 @@ export async function POST(request: Request) {
     }
     if (!email) return NextResponse.json({ error: "E-posta veya kullanıcı gerekli" }, { status: 400 })
 
-    const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin
+    // Always point recovery links at production so links never resolve to
+    // localhost (e.g. when generated from a dev environment).
+    const origin = (process.env.NEXT_PUBLIC_SITE_URL || "https://rockswell.store").replace(/\/$/, "")
     const redirectTo = `${origin}/reset-password`
 
     const { data, error } = await service.auth.admin.generateLink({
