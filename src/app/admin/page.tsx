@@ -17,6 +17,7 @@ import {
   getAdminStats, getAllUsers, getAllCompanies, getAllCampaigns,
   createCampaign, setCampaignActive, setProductActive, updateOrderStatus,
 } from "@/lib/api"
+import { supabase } from "@/lib/supabase"
 import { formatPrice, formatDate, cn } from "@/lib/utils"
 import type { Order } from "@/lib/types"
 import {
@@ -24,6 +25,7 @@ import {
   Settings, BarChart3, Activity, DollarSign,
   Warehouse, Percent, TrendingUp, ChevronRight, Search,
   Eye, Plus, CheckCircle, XCircle, Truck, X,
+  KeyRound, Copy, Check,
 } from "lucide-react"
 
 const adminTabs = [
@@ -272,10 +274,36 @@ function AdminOverview() {
 function AdminUsers() {
   const { data: users, loading } = useData(() => getAllUsers(), [])
   const [search, setSearch] = useState("")
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [linkModal, setLinkModal] = useState<{ name: string; link: string } | null>(null)
   const rows = (users ?? []).filter(
     (u) => `${u.name} ${u.surname}`.toLowerCase().includes(search.toLowerCase()) ||
       u.companyName.toLowerCase().includes(search.toLowerCase())
   )
+
+  const generateLink = async (user: { id: string; name: string; surname: string }) => {
+    setBusyId(user.id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch("/api/admin/reset-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ userId: user.id }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? "Link oluşturulamadı")
+      await navigator.clipboard.writeText(json.link).catch(() => {})
+      setLinkModal({ name: `${user.name} ${user.surname}`.trim(), link: json.link })
+      toast.success("Şifre bağlantısı oluşturuldu ve kopyalandı")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Link oluşturulamadı")
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -298,13 +326,15 @@ function AdminUsers() {
         ) : rows.length === 0 ? (
           <div className="text-center py-12"><Users size={32} className="mx-auto text-white/20 mb-3" /><p className="text-sm text-white/40">Kullanıcı bulunamadı</p></div>
         ) : (
+          <div className="overflow-auto max-h-[600px]">
           <table className="w-full">
-            <thead>
+            <thead className="sticky top-0 bg-card">
               <tr className="border-b border-white/5">
                 <th className="text-left text-xs font-medium text-white/30 p-4">Kullanıcı</th>
                 <th className="text-left text-xs font-medium text-white/30 p-4">Firma</th>
                 <th className="text-left text-xs font-medium text-white/30 p-4">Rol</th>
                 <th className="text-left text-xs font-medium text-white/30 p-4">Durum</th>
+                <th className="text-right text-xs font-medium text-white/30 p-4">Şifre Bağlantısı</th>
               </tr>
             </thead>
             <tbody>
@@ -326,11 +356,66 @@ function AdminUsers() {
                   <td className="p-4">
                     <Badge variant={user.isActive ? "success" : "default"} size="sm">{user.isActive ? "Aktif" : "Pasif"}</Badge>
                   </td>
+                  <td className="p-4 text-right">
+                    <button
+                      disabled={busyId === user.id}
+                      onClick={() => generateLink(user)}
+                      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors"
+                    >
+                      <KeyRound size={13} />
+                      {busyId === user.id ? "Oluşturuluyor..." : "Şifre Linki"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
+      </div>
+
+      {linkModal && <ResetLinkModal name={linkModal.name} link={linkModal.link} onClose={() => setLinkModal(null)} />}
+    </div>
+  )
+}
+
+function ResetLinkModal({ name, link, onClose }: { name: string; link: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    await navigator.clipboard.writeText(link).catch(() => {})
+    setCopied(true)
+    toast.success("Kopyalandı")
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg bg-card border border-border rounded-2xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-accent/10 text-accent flex items-center justify-center"><KeyRound size={16} /></div>
+            <div>
+              <h3 className="text-base font-bold text-white">Şifre Sıfırlama Bağlantısı</h3>
+              <p className="text-xs text-white/40">{name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white"><X size={18} /></button>
+        </div>
+
+        <p className="text-xs text-white/50">
+          Bu bağlantıyı üyeye iletin. Üye, bağlantıya tıklayıp kendi şifresini belirleyecek. Bağlantı bir süre sonra geçersiz olur; gerekirse yenisini oluşturun.
+        </p>
+
+        <div className="flex items-center gap-2">
+          <input
+            readOnly
+            value={link}
+            onFocus={(e) => e.currentTarget.select()}
+            className="flex-1 h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-white/80 text-xs font-mono focus:outline-none focus:border-accent/40"
+          />
+          <Button size="sm" onClick={copy} icon={copied ? <Check size={14} /> : <Copy size={14} />}>
+            {copied ? "Kopyalandı" : "Kopyala"}
+          </Button>
+        </div>
       </div>
     </div>
   )
