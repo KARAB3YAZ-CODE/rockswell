@@ -28,6 +28,22 @@ async function requireAuth() {
   return session
 }
 
+/** Calls an admin API route with the caller's access token attached. */
+async function authedFetch<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const res = await fetch(path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.access_token ?? ""}`,
+      ...(init.headers ?? {}),
+    },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) err((json as { error?: string }).error ?? "İşlem başarısız")
+  return json as T
+}
+
 async function fetchProfile(userId: string, email: string): Promise<User> {
   const { data, error } = await supabase
     .from("profiles")
@@ -689,6 +705,254 @@ export async function setProductActive(id: string, isActive: boolean): Promise<v
   await requireAuth()
   const { error } = await supabase.from("products").update({ is_active: isActive }).eq("id", id)
   if (error) err(error.message)
+}
+
+// ─── Admin CRUD ───────────────────────────────────────────────────────────────
+
+// Companies
+export interface CompanyInput {
+  name: string
+  taxNumber: string
+  taxOffice: string
+  phone: string
+  email: string
+  address: Address
+}
+
+function companyRow(input: CompanyInput) {
+  return {
+    name: input.name,
+    tax_number: input.taxNumber,
+    tax_office: input.taxOffice,
+    phone: input.phone,
+    email: input.email,
+    address: input.address,
+  }
+}
+
+export async function createCompany(input: CompanyInput): Promise<Company> {
+  await requireAuth()
+  const { data, error } = await supabase.from("companies").insert(companyRow(input)).select().single()
+  if (error || !data) err(error?.message ?? "Şirket oluşturulamadı")
+  return mapCompany(data)
+}
+
+export async function updateCompany(id: string, input: CompanyInput): Promise<Company> {
+  await requireAuth()
+  const { data, error } = await supabase.from("companies").update(companyRow(input)).eq("id", id).select().single()
+  if (error || !data) err(error?.message ?? "Şirket güncellenemedi")
+  return mapCompany(data)
+}
+
+export async function deleteCompany(id: string): Promise<void> {
+  await requireAuth()
+  const { error } = await supabase.from("companies").delete().eq("id", id)
+  if (error) err(error.message)
+}
+
+// Products
+export interface ProductInput {
+  sku: string
+  name: string
+  brand: string
+  category: string
+  description: string
+  basePrice: number
+  stockQuantity: number
+  isActive: boolean
+}
+
+export async function createProduct(input: ProductInput): Promise<Product> {
+  await requireAuth()
+  const { data: wh } = await supabase.from("warehouses").select("id, name").eq("code", "ANA").maybeSingle()
+  const now = new Date().toISOString()
+  const stock = [{
+    warehouseId: (wh?.id as string) ?? "",
+    warehouseName: (wh?.name as string) ?? "Ana Depo",
+    quantity: input.stockQuantity,
+    reserved: 0,
+    available: input.stockQuantity,
+    location: "",
+    lastUpdated: now,
+  }]
+  const { data, error } = await supabase
+    .from("products")
+    .insert({
+      sku: input.sku,
+      name: input.name,
+      brand: input.brand,
+      category: input.category,
+      description: input.description,
+      base_price: input.basePrice,
+      is_active: input.isActive,
+      stock,
+    })
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Ürün oluşturulamadı")
+  return mapProduct(data)
+}
+
+export async function updateProduct(id: string, input: ProductInput): Promise<Product> {
+  await requireAuth()
+  const { data: existing } = await supabase.from("products").select("stock").eq("id", id).single()
+  const now = new Date().toISOString()
+  const stockArr = (existing?.stock as Array<Record<string, unknown>>) ?? []
+  const stock = stockArr.length
+    ? stockArr.map((s, i) => (i === 0 ? { ...s, quantity: input.stockQuantity, available: input.stockQuantity, lastUpdated: now } : s))
+    : [{ warehouseId: "", warehouseName: "Ana Depo", quantity: input.stockQuantity, reserved: 0, available: input.stockQuantity, location: "", lastUpdated: now }]
+
+  const { data, error } = await supabase
+    .from("products")
+    .update({
+      sku: input.sku,
+      name: input.name,
+      brand: input.brand,
+      category: input.category,
+      description: input.description,
+      base_price: input.basePrice,
+      is_active: input.isActive,
+      stock,
+    })
+    .eq("id", id)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Ürün güncellenemedi")
+  return mapProduct(data)
+}
+
+export async function deleteProduct(id: string): Promise<void> {
+  await requireAuth()
+  const { error } = await supabase.from("products").delete().eq("id", id)
+  if (error) err(error.message)
+}
+
+// Orders
+export async function deleteOrder(id: string): Promise<void> {
+  await requireAuth()
+  const { error } = await supabase.from("orders").delete().eq("id", id)
+  if (error) err(error.message)
+}
+
+// Campaigns
+export async function updateCampaign(id: string, input: CreateCampaignInput): Promise<Campaign> {
+  await requireAuth()
+  const { data, error } = await supabase
+    .from("campaigns")
+    .update({
+      name: input.name,
+      description: input.description,
+      type: input.type,
+      discount_rate: input.discountRate,
+      start_date: input.startDate,
+      end_date: input.endDate,
+    })
+    .eq("id", id)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Kampanya güncellenemedi")
+  return mapCampaign(data)
+}
+
+export async function deleteCampaign(id: string): Promise<void> {
+  await requireAuth()
+  const { error } = await supabase.from("campaigns").delete().eq("id", id)
+  if (error) err(error.message)
+}
+
+// Warehouses
+export interface WarehouseInput {
+  name: string
+  code: string
+  manager: string
+  phone: string
+  workingHours: string
+  capacity: number
+  isActive: boolean
+  address: Address
+}
+
+function warehouseRow(input: WarehouseInput) {
+  return {
+    name: input.name,
+    code: input.code,
+    manager: input.manager,
+    phone: input.phone,
+    working_hours: input.workingHours,
+    capacity: input.capacity,
+    is_active: input.isActive,
+    address: input.address,
+  }
+}
+
+export async function getAllWarehouses(): Promise<Warehouse[]> {
+  await requireAuth()
+  const { data, error } = await supabase.from("warehouses").select("*").order("name")
+  if (error) err(error.message)
+  return (data ?? []).map(mapWarehouse)
+}
+
+export async function createWarehouse(input: WarehouseInput): Promise<Warehouse> {
+  await requireAuth()
+  const { data, error } = await supabase.from("warehouses").insert(warehouseRow(input)).select().single()
+  if (error || !data) err(error?.message ?? "Depo oluşturulamadı")
+  return mapWarehouse(data)
+}
+
+export async function updateWarehouse(id: string, input: WarehouseInput): Promise<Warehouse> {
+  await requireAuth()
+  const { data, error } = await supabase.from("warehouses").update(warehouseRow(input)).eq("id", id).select().single()
+  if (error || !data) err(error?.message ?? "Depo güncellenemedi")
+  return mapWarehouse(data)
+}
+
+export async function deleteWarehouse(id: string): Promise<void> {
+  await requireAuth()
+  const { error } = await supabase.from("warehouses").delete().eq("id", id)
+  if (error) err(error.message)
+}
+
+// Users (profile fields editable directly; auth create/delete via service routes)
+export interface AdminUserUpdate {
+  name: string
+  surname: string
+  phone: string
+  role: string
+  isActive: boolean
+  companyId?: string | null
+}
+
+export async function updateUserByAdmin(id: string, input: AdminUserUpdate): Promise<void> {
+  await requireAuth()
+  const patch: Record<string, unknown> = {
+    name: input.name,
+    surname: input.surname,
+    phone: input.phone,
+    role: input.role,
+    is_active: input.isActive,
+  }
+  if (input.companyId !== undefined) patch.company_id = input.companyId
+  const { error } = await supabase.from("profiles").update(patch).eq("id", id)
+  if (error) err(error.message)
+}
+
+export interface AdminCreateUserInput {
+  email: string
+  name: string
+  surname: string
+  phone: string
+  role: string
+  companyId?: string
+  companyName?: string
+  taxNumber?: string
+}
+
+export async function adminCreateUser(input: AdminCreateUserInput): Promise<void> {
+  await authedFetch("/api/admin/users", { method: "POST", body: JSON.stringify(input) })
+}
+
+export async function adminDeleteUser(id: string): Promise<void> {
+  await authedFetch(`/api/admin/users/${id}`, { method: "DELETE" })
 }
 
 // ─── Invoices ───────────────────────────────────────────────────────────────
