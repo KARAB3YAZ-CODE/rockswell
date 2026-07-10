@@ -96,10 +96,17 @@ function AdminGuarded() {
   return (
     <Shell>
       <div className="flex gap-6">
-        <div className={cn("shrink-0 transition-all duration-300", sidebarCollapsed ? "w-16" : "w-56")}>
-          <div className="space-y-1 sticky top-24">
-            <div className="flex items-center justify-between mb-3 px-3">
-              {!sidebarCollapsed && <span className="text-xs font-medium text-white/40 uppercase tracking-wider">Yönetim</span>}
+        <div className={cn("shrink-0 transition-all duration-300", sidebarCollapsed ? "w-16" : "w-60")}>
+          <div className="sticky top-24 rounded-2xl bg-card/60 border border-border p-2 backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-2 px-2 pt-1">
+              {!sidebarCollapsed && (
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-accent/30 to-accent/5 border border-accent/20 flex items-center justify-center">
+                    <Settings size={14} className="text-accent" />
+                  </div>
+                  <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">Yönetim</span>
+                </div>
+              )}
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                 className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-white/5 text-white/30 hover:text-white/60"
@@ -107,23 +114,29 @@ function AdminGuarded() {
                 <ChevronRight size={12} className={cn("transition-transform", sidebarCollapsed && "rotate-180")} />
               </button>
             </div>
-            {adminTabs.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <Link
-                  key={tab.key}
-                  href={`/admin?tab=${tab.key}`}
-                  className={cn(
-                    "flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                    activeTab === tab.key ? "bg-accent/10 text-accent" : "text-white/50 hover:text-white hover:bg-white/5"
-                  )}
-                  title={sidebarCollapsed ? tab.label : undefined}
-                >
-                  <Icon size={16} className="shrink-0" />
-                  {!sidebarCollapsed && tab.label}
-                </Link>
-              )
-            })}
+            <div className="space-y-0.5">
+              {adminTabs.map((tab) => {
+                const Icon = tab.icon
+                const active = activeTab === tab.key
+                return (
+                  <Link
+                    key={tab.key}
+                    href={`/admin?tab=${tab.key}`}
+                    className={cn(
+                      "group relative flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
+                      active
+                        ? "bg-gradient-to-r from-accent/15 to-transparent text-accent"
+                        : "text-white/50 hover:text-white hover:bg-white/5"
+                    )}
+                    title={sidebarCollapsed ? tab.label : undefined}
+                  >
+                    {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-full bg-accent" />}
+                    <Icon size={16} className="shrink-0" />
+                    {!sidebarCollapsed && tab.label}
+                  </Link>
+                )
+              })}
+            </div>
           </div>
         </div>
 
@@ -141,47 +154,70 @@ function AdminGuarded() {
   )
 }
 
+const statStyles: Record<string, { text: string; chip: string; glow: string; from: string }> = {
+  info: { text: "text-info", chip: "bg-info/10 text-info border-info/20", glow: "shadow-info/10", from: "from-info/10" },
+  accent: { text: "text-accent", chip: "bg-accent/10 text-accent border-accent/20", glow: "shadow-accent/10", from: "from-accent/10" },
+  success: { text: "text-success", chip: "bg-success/10 text-success border-success/20", glow: "shadow-success/10", from: "from-success/10" },
+  warning: { text: "text-warning", chip: "bg-warning/10 text-warning border-warning/20", glow: "shadow-warning/10", from: "from-warning/10" },
+}
+
 function AdminOverview() {
   const { data: stats, loading } = useData(() => getAdminStats(), [])
   const { orders, loading: ordersLoading } = useOrders()
 
   const cards = [
-    { label: "Toplam Kullanıcı", value: stats?.users ?? 0, icon: Users, color: "text-info" },
-    { label: "Aktif Şirket", value: stats?.companies ?? 0, icon: Building2, color: "text-accent" },
-    { label: "Toplam Sipariş", value: stats?.orders ?? 0, icon: ShoppingBag, color: "text-success" },
-    { label: "Ciro", value: stats ? formatPrice(stats.revenue) : "—", icon: DollarSign, color: "text-warning" },
+    { label: "Toplam Kullanıcı", value: stats?.users ?? 0, icon: Users, tone: "info", hint: "Kayıtlı hesaplar" },
+    { label: "Aktif Şirket", value: stats?.companies ?? 0, icon: Building2, tone: "accent", hint: "Bayi & müşteri" },
+    { label: "Toplam Sipariş", value: stats?.orders ?? 0, icon: ShoppingBag, tone: "success", hint: "Tüm zamanlar" },
+    { label: "Ciro", value: stats ? formatPrice(stats.revenue) : "—", icon: DollarSign, tone: "warning", hint: "Toplam gelir" },
   ]
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-white">Yönetim Paneli</h2>
-          <p className="text-sm text-white/40">Sistem genel durumu</p>
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-accent/10 via-card to-card p-6">
+        <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent/10 blur-3xl" />
+        <div className="relative flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h2 className="text-2xl font-bold text-white">Yönetim Paneli</h2>
+              <Badge variant="success" pulsing>Sistem Aktif</Badge>
+            </div>
+            <p className="text-sm text-white/50">Sistemin genel durumunu buradan takip edin</p>
+          </div>
+          <div className="hidden sm:flex w-14 h-14 rounded-2xl bg-gradient-to-br from-accent/30 to-accent/5 border border-accent/20 items-center justify-center">
+            <BarChart3 size={26} className="text-accent" />
+          </div>
         </div>
-        <Badge variant="success" pulsing>Sistem Aktif</Badge>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((stat, i) => {
           const Icon = stat.icon
+          const s = statStyles[stat.tone]
           return (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
-              className="rounded-2xl p-4 bg-card border border-border"
+              className={cn(
+                "group relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br to-card border border-border transition-all hover:border-white/15 hover:shadow-lg",
+                s.from, s.glow
+              )}
             >
-              <div className="flex items-start justify-between mb-2">
-                <span className="text-xs text-white/40">{stat.label}</span>
-                <Icon size={16} className={stat.color} />
+              <div className="flex items-start justify-between mb-4">
+                <div className={cn("w-10 h-10 rounded-xl border flex items-center justify-center", s.chip)}>
+                  <Icon size={18} />
+                </div>
+                <TrendingUp size={14} className="text-white/20 group-hover:text-white/40 transition-colors" />
               </div>
               {loading ? (
-                <Skeleton className="h-6 w-20" />
+                <Skeleton className="h-7 w-24 mb-1" />
               ) : (
-                <p className="text-xl font-bold text-white">{stat.value}</p>
+                <p className="text-2xl font-bold text-white leading-none mb-1">{stat.value}</p>
               )}
+              <p className="text-xs font-medium text-white/60">{stat.label}</p>
+              <p className="text-[11px] text-white/30 mt-0.5">{stat.hint}</p>
             </motion.div>
           )
         })}
@@ -243,10 +279,7 @@ function AdminUsers() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-white">Kullanıcı Yönetimi</h2>
-        <p className="text-sm text-white/40">{users?.length ?? 0} kullanıcı</p>
-      </div>
+      <SectionHeader icon={Users} tone="info" title="Kullanıcı Yönetimi" subtitle={`${users?.length ?? 0} kullanıcı`} />
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         <div className="p-4 border-b border-border">
           <div className="relative">
@@ -308,27 +341,36 @@ function AdminCompanies() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-white">Şirket Yönetimi</h2>
-        <p className="text-sm text-white/40">{companies?.length ?? 0} şirket</p>
-      </div>
+      <SectionHeader icon={Building2} tone="accent" title="Şirket Yönetimi" subtitle={`${companies?.length ?? 0} şirket`} />
       {loading ? (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}
         </div>
       ) : (companies?.length ?? 0) === 0 ? (
         <div className="text-center py-12"><Building2 size={32} className="mx-auto text-white/20 mb-3" /><p className="text-sm text-white/40">Şirket bulunamadı</p></div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {companies!.map((c) => (
-            <GlassCard key={c.id} intensity="light" className="p-4">
-              <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-3">
-                <Building2 size={18} />
+            <GlassCard key={c.id} intensity="light" className="p-5 group hover:border-accent/20 transition-all">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent/25 to-accent/5 border border-accent/20 text-accent flex items-center justify-center text-base font-bold shrink-0">
+                  {c.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold text-white truncate group-hover:text-accent transition-colors">{c.name}</h3>
+                  <p className="text-xs text-white/40 truncate">{c.email || c.phone || "—"}</p>
+                </div>
               </div>
-              <h3 className="text-base font-semibold text-white truncate">{c.name}</h3>
-              <p className="text-xs text-white/40 mt-1">Vergi No: {c.taxNumber || "—"}</p>
-              <p className="text-xs text-white/40">{c.address.city || "—"} {c.address.district}</p>
-              <p className="text-xs text-white/30 mt-2">{c.email || c.phone || ""}</p>
+              <div className="space-y-2 pt-3 border-t border-white/5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/40">Vergi No</span>
+                  <span className="text-white/70 font-mono">{c.taxNumber || "—"}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/40">Konum</span>
+                  <span className="text-white/70 truncate ml-2">{[c.address.city, c.address.district].filter(Boolean).join(", ") || "—"}</span>
+                </div>
+              </div>
             </GlassCard>
           ))}
         </div>
@@ -356,10 +398,7 @@ function AdminProducts() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-white">Ürün Yönetimi</h2>
-        <p className="text-sm text-white/40">{products.length} ürün</p>
-      </div>
+      <SectionHeader icon={Package} tone="success" title="Ürün Yönetimi" subtitle={`${products.length} ürün`} />
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         <div className="p-4 border-b border-border">
           <div className="relative">
@@ -466,10 +505,7 @@ function AdminOrders() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-white">Sipariş Yönetimi</h2>
-        <p className="text-sm text-white/40">{orders.length} sipariş</p>
-      </div>
+      <SectionHeader icon={ShoppingBag} tone="warning" title="Sipariş Yönetimi" subtitle={`${orders.length} sipariş`} />
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         {loading ? (
           <div className="p-4"><TableSkeleton rows={6} /></div>
@@ -517,10 +553,7 @@ function AdminWarehouses() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-white">Depo Yönetimi</h2>
-        <p className="text-sm text-white/40">{warehouses.length} depo</p>
-      </div>
+      <SectionHeader icon={Warehouse} tone="info" title="Depo Yönetimi" subtitle={`${warehouses.length} depo`} />
       {loading ? (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}
@@ -571,13 +604,13 @@ function AdminCampaigns() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-white">Kampanya Yönetimi</h2>
-          <p className="text-sm text-white/40">{campaigns?.length ?? 0} kampanya</p>
-        </div>
-        <Button size="sm" icon={<Plus size={14} />} onClick={() => setShowForm(true)}>Yeni Kampanya</Button>
-      </div>
+      <SectionHeader
+        icon={Percent}
+        tone="accent"
+        title="Kampanya Yönetimi"
+        subtitle={`${campaigns?.length ?? 0} kampanya`}
+        action={<Button size="sm" icon={<Plus size={14} />} onClick={() => setShowForm(true)}>Yeni Kampanya</Button>}
+      />
 
       {loading ? (
         <div className="grid md:grid-cols-2 gap-4">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>
@@ -664,6 +697,36 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label className="block text-xs font-medium text-white/50 mb-1.5">{label}</label>
       {children}
+    </div>
+  )
+}
+
+function SectionHeader({
+  icon: Icon,
+  title,
+  subtitle,
+  tone = "accent",
+  action,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>
+  title: string
+  subtitle: string
+  tone?: keyof typeof statStyles
+  action?: React.ReactNode
+}) {
+  const s = statStyles[tone]
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={cn("w-11 h-11 rounded-xl border flex items-center justify-center shrink-0", s.chip)}>
+          <Icon size={20} />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold text-white truncate">{title}</h2>
+          <p className="text-sm text-white/40">{subtitle}</p>
+        </div>
+      </div>
+      {action}
     </div>
   )
 }
