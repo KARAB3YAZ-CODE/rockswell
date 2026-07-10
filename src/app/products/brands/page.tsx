@@ -7,11 +7,10 @@ import { Shell } from "@/components/layout/shell"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { cn } from "@/lib/utils"
-import { BrandLogo } from "@/components/brands/brand-logos"
+import { VehicleBrandLogo } from "@/components/brands/vehicle-brand-logo"
 import { useProducts } from "@/hooks/use-data"
 import {
-  Car, ChevronRight, Package,
+  ChevronRight,
 } from "lucide-react"
 
 export default function BrandsPage() {
@@ -119,8 +118,8 @@ export default function BrandsPage() {
                 >
                   <Link href={`/products?vehicleBrand=${encodeURIComponent(b)}`}>
                     <GlassCard intensity="light" className="p-4 hover:border-accent/30 transition-all h-full group">
-                      <div className="flex items-start justify-between mb-2">
-                        <BrandLogo brand={b} className="w-10 h-10 text-white/60" />
+                      <div className="flex items-start justify-between mb-3">
+                        <VehicleBrandLogo brand={b} size={52} />
                         <Badge variant="premium" size="sm">{brandCounts[b]} ürün</Badge>
                       </div>
                       <h3 className="text-base font-semibold text-white group-hover:text-accent transition-colors">{b}</h3>

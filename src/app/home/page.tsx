@@ -5,6 +5,7 @@ import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import toast from "react-hot-toast"
 import { Shell } from "@/components/layout/shell"
+import { VehicleBrandLogo } from "@/components/brands/vehicle-brand-logo"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
@@ -665,9 +666,9 @@ export default function CustomerHomePage() {
                 >
                   <Link
                     href={`/products?vehicleBrand=${encodeURIComponent(brand)}`}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/20 hover:text-accent transition-all text-sm font-medium text-white/60"
+                    className="inline-flex items-center gap-2 pl-2 pr-4 py-1.5 rounded-xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/20 hover:text-accent transition-all text-sm font-medium text-white/60"
                   >
-                    <Truck size={14} className="text-white/30" />
+                    <VehicleBrandLogo brand={brand} size={28} className="rounded-lg p-1" />
                     {brand}
                   </Link>
                 </motion.div>
