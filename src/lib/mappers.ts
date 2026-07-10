@@ -3,6 +3,7 @@ import type {
   Campaign,
   Company,
   DashboardStats,
+  Invoice,
   Notification,
   Order,
   Product,
@@ -139,6 +140,27 @@ export function mapCampaign(row: Record<string, unknown>): Campaign {
     isActive: Boolean(row.is_active),
     usageLimit: row.usage_limit != null ? Number(row.usage_limit) : undefined,
     usedCount: Number(row.used_count ?? 0),
+  }
+}
+
+export function mapInvoice(row: Record<string, unknown>): Invoice {
+  return {
+    id: String(row.id),
+    invoiceNumber: String(row.invoice_number ?? ""),
+    orderId: String(row.order_id ?? ""),
+    companyId: String(row.company_id ?? ""),
+    type: (row.type as Invoice["type"]) ?? "invoice",
+    status: (row.status as Invoice["status"]) ?? "draft",
+    items: (row.items as Invoice["items"]) ?? [],
+    subtotal: Number(row.subtotal ?? 0),
+    taxTotal: Number(row.tax_total ?? 0),
+    discountTotal: Number(row.discount_total ?? 0),
+    grandTotal: Number(row.grand_total ?? 0),
+    currency: String(row.currency ?? "TRY"),
+    dueDate: new Date(String(row.due_date ?? row.created_at)),
+    paidDate: row.paid_date ? new Date(String(row.paid_date)) : undefined,
+    createdAt: new Date(String(row.created_at)),
+    pdfUrl: row.pdf_url ? String(row.pdf_url) : undefined,
   }
 }
 

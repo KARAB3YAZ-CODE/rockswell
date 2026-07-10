@@ -1,6 +1,7 @@
 "use client"
 
 import { create } from "zustand"
+import { persist } from "zustand/middleware"
 import type { Notification, User, Company } from "./types"
 
 interface CartItem {
@@ -14,6 +15,7 @@ interface CartItem {
   totalPrice: number
   warehouseId: string
   minOrderQuantity: number
+  maxOrderQuantity?: number
 }
 
 interface CartStore {
@@ -28,38 +30,55 @@ interface CartStore {
   getSubtotal: () => number
 }
 
-export const useCartStore = create<CartStore>((set, get) => ({
-  items: [],
-  isOpen: false,
-  setIsOpen: (open) => set({ isOpen: open }),
-  addItem: (item) =>
-    set((state) => {
-      const existing = state.items.find((i) => i.productId === item.productId)
-      if (existing) {
-        return {
-          items: state.items.map((i) =>
-            i.productId === item.productId
-              ? { ...i, quantity: Math.min(i.quantity + item.quantity, i.minOrderQuantity * 10) }
-              : i
-          ),
-        }
-      }
-      return { items: [...state.items, item] }
+function clampQty(qty: number, item: { minOrderQuantity: number; maxOrderQuantity?: number }): number {
+  const min = item.minOrderQuantity || 1
+  const max = item.maxOrderQuantity && item.maxOrderQuantity > 0 ? item.maxOrderQuantity : 9999
+  return Math.min(Math.max(qty, min), max)
+}
+
+export const useCartStore = create<CartStore>()(
+  persist(
+    (set, get) => ({
+      items: [],
+      isOpen: false,
+      setIsOpen: (open) => set({ isOpen: open }),
+      addItem: (item) =>
+        set((state) => {
+          const existing = state.items.find((i) => i.productId === item.productId)
+          if (existing) {
+            return {
+              items: state.items.map((i) => {
+                if (i.productId !== item.productId) return i
+                const quantity = clampQty(i.quantity + item.quantity, i)
+                return { ...i, quantity, totalPrice: i.unitPrice * quantity }
+              }),
+            }
+          }
+          const quantity = clampQty(item.quantity, item)
+          return { items: [...state.items, { ...item, quantity, totalPrice: item.unitPrice * quantity }] }
+        }),
+      removeItem: (productId) =>
+        set((state) => ({
+          items: state.items.filter((i) => i.productId !== productId),
+        })),
+      updateQuantity: (productId, quantity) =>
+        set((state) => ({
+          items: state.items.map((i) => {
+            if (i.productId !== productId) return i
+            const q = clampQty(quantity, i)
+            return { ...i, quantity: q, totalPrice: i.unitPrice * q }
+          }),
+        })),
+      clearCart: () => set({ items: [] }),
+      getTotalItems: () => get().items.reduce((acc, i) => acc + i.quantity, 0),
+      getSubtotal: () => get().items.reduce((acc, i) => acc + i.totalPrice, 0),
     }),
-  removeItem: (productId) =>
-    set((state) => ({
-      items: state.items.filter((i) => i.productId !== productId),
-    })),
-  updateQuantity: (productId, quantity) =>
-    set((state) => ({
-      items: state.items.map((i) =>
-        i.productId === productId ? { ...i, quantity: Math.max(i.minOrderQuantity, quantity), totalPrice: i.unitPrice * Math.max(i.minOrderQuantity, quantity) } : i
-      ),
-    })),
-  clearCart: () => set({ items: [] }),
-  getTotalItems: () => get().items.reduce((acc, i) => acc + i.quantity, 0),
-  getSubtotal: () => get().items.reduce((acc, i) => acc + i.totalPrice, 0),
-}))
+    {
+      name: "rockswell_cart",
+      partialize: (state) => ({ items: state.items }),
+    }
+  )
+)
 
 interface UIStore {
   sidebarOpen: boolean

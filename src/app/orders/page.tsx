@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, Suspense } from "react"
+import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
-import toast from "react-hot-toast"
 import { Shell } from "@/components/layout/shell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -43,7 +43,7 @@ function OrdersContent() {
   const searchParams = useSearchParams()
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string | null>(searchParams.get("status"))
-  const { orders: allOrders, loading } = useOrders()
+  const { orders: allOrders, loading, refetch } = useOrders()
 
   let orders = [...allOrders]
   if (searchQuery) {
@@ -64,8 +64,8 @@ function OrdersContent() {
             <p className="text-sm text-white/40">{loading ? "..." : `${orders.length} sipariş`}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" icon={<Filter size={14} />} onClick={() => setStatusFilter(null)}>Filtrele</Button>
-            <Button size="sm" icon={<RefreshCw size={14} />} onClick={() => toast.success("Siparişler güncellendi")}>Yenile</Button>
+            <Button variant="ghost" size="sm" icon={<Filter size={14} />} onClick={() => { setStatusFilter(null); setSearchQuery("") }}>Filtreyi Temizle</Button>
+            <Button size="sm" icon={<RefreshCw size={14} />} onClick={() => refetch()}>Yenile</Button>
           </div>
         </div>
 
@@ -84,7 +84,10 @@ function OrdersContent() {
           <div className="flex gap-2 overflow-x-auto pb-1">
             {[
               { key: null, label: "Tümü" },
+              { key: "draft", label: "Ödeme Bekleyen" },
               { key: "pending_approval", label: "Onay Bekleyen" },
+              { key: "confirmed", label: "Onaylanan" },
+              { key: "quotation", label: "Teklif" },
               { key: "processing", label: "Hazırlanıyor" },
               { key: "shipped", label: "Kargoda" },
               { key: "delivered", label: "Teslim Edilen" },
@@ -147,7 +150,7 @@ function OrdersContent() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
                 >
-                  <button onClick={() => toast.success(`${order.orderNumber} - ${formatPrice(order.pricing.grandTotal)} - ${status.label}`)} className="w-full text-left">
+                  <Link href={`/orders/${order.id}`} className="block w-full text-left">
                     <GlassCard intensity="light" className="p-4 hover:bg-white/[0.06] transition-colors block">
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-4">
@@ -185,7 +188,7 @@ function OrdersContent() {
                         </div>
                       </div>
                     </GlassCard>
-                  </button>
+                  </Link>
                 </motion.div>
               )
             })}

@@ -9,6 +9,7 @@ import { cn, formatPrice } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import { useUIStore, useCartStore } from "@/lib/store"
 import { useDashboardStats, useProducts, useNotifications } from "@/hooks/use-data"
+import { markNotificationRead, markAllNotificationsRead } from "@/lib/api"
 import type { Product } from "@/lib/types"
 import {
   Search, Bell, ShoppingCart, ChevronDown, User, Settings,
@@ -25,10 +26,20 @@ export function Header() {
   const router = useRouter()
   const { isAdmin, logout, user, company } = useAuth()
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
-  const markAsRead = useUIStore((s) => s.markAsRead)
-  const clearNotifications = useUIStore((s) => s.clearNotifications)
+  const markAsReadLocal = useUIStore((s) => s.markAsRead)
   const addNotification = useUIStore((s) => s.addNotification)
   const notifications = useUIStore((s) => s.notifications)
+
+  const markAsRead = (id: string) => {
+    markAsReadLocal(id)
+    markNotificationRead(id).catch(() => {})
+  }
+
+  const markAllRead = () => {
+    notifications.forEach((n) => { if (!n.read) markAsReadLocal(n.id) })
+    markAllNotificationsRead().catch(() => {})
+    toast.success("Tüm bildirimler okundu")
+  }
   const cartItems = useCartStore((s) => s.items)
   const addItem = useCartStore((s) => s.addItem)
   const [showNotifications, setShowNotifications] = useState(false)
@@ -453,7 +464,7 @@ export function Header() {
           >
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h3 className="text-sm font-semibold text-white">Bildirimler</h3>
-              <button onClick={() => { clearNotifications(); toast.success("Tüm bildirimler okundu") }} className="text-xs text-accent hover:text-accent/80 transition-colors">Tümünü Oku</button>
+              <button onClick={markAllRead} className="text-xs text-accent hover:text-accent/80 transition-colors">Tümünü Oku</button>
             </div>
             <div className="max-h-80 overflow-y-auto">
               {notifications.length === 0 && (

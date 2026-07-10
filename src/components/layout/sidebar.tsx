@@ -38,7 +38,7 @@ const customerNav: NavItem[] = [
     label: "Siparişler", icon: <ShoppingBag size={20} />, href: "/orders",
     children: [
       { label: "Tüm Siparişler", href: "/orders" },
-      { label: "Onay Bekleyen", href: "/orders?status=pending" },
+      { label: "Onay Bekleyen", href: "/orders?status=pending_approval" },
       { label: "Kargodakiler", href: "/orders?status=shipped" },
       { label: "İade Talepleri", href: "/orders?status=returned" },
     ],
@@ -66,7 +66,7 @@ const adminNav: NavItem[] = [
     label: "Siparişler", icon: <ShoppingBag size={20} />, href: "/admin?tab=orders",
     children: [
       { label: "Tüm Siparişler", href: "/orders" },
-      { label: "Onay Bekleyen", href: "/orders?status=pending" },
+      { label: "Onay Bekleyen", href: "/orders?status=pending_approval" },
     ],
   },
   { label: "Depolar", icon: <Warehouse size={20} />, href: "/admin?tab=warehouses" },

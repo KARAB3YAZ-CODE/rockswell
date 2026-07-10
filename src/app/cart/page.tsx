@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import toast from "react-hot-toast"
 import { Shell } from "@/components/layout/shell"
@@ -10,33 +11,97 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useCartStore } from "@/lib/store"
 import { formatPrice } from "@/lib/utils"
+import { computeCartPricing, DEALER_DISCOUNT_RATE, TAX_RATE } from "@/lib/pricing"
+import { createOrder, type PaymentMethod } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
 import {
   ShoppingCart, Trash2, Plus, Minus, Package,
-  CreditCard, Truck,
+  CreditCard, Truck, Building2, CheckCircle2,
   FileText, AlertTriangle, ShoppingBag, AlertCircle,
 } from "lucide-react"
 
 export default function CartPage() {
+  const router = useRouter()
+  const { isAuthenticated } = useAuth()
   const { items, updateQuantity, removeItem, clearCart, getSubtotal } = useCartStore()
   const [orderNote, setOrderNote] = useState("")
-  const subtotal = getSubtotal()
-  const discount = subtotal * 0.25
-  const shipping = subtotal > 5000 ? 0 : 150
-  const tax = (subtotal - discount) * 0.20
-  const total = subtotal - discount + shipping + tax
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("havale")
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmitOrder = () => {
-    toast.success("Siparişiniz onaya gönderildi!", { duration: 3000 })
+  const subtotal = getSubtotal()
+  const { discount, shipping, tax, total } = computeCartPricing(subtotal)
+
+  const checkoutItems = () =>
+    items.map((i) => ({
+      productId: i.productId,
+      productName: i.productName,
+      sku: i.sku,
+      brand: i.brand,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      warehouseId: i.warehouseId,
+    }))
+
+  const handleSubmitOrder = async () => {
+    if (!isAuthenticated) {
+      toast.error("Sipariş vermek için giriş yapın")
+      router.push("/login")
+      return
+    }
+    if (items.length === 0) return
+
+    setSubmitting(true)
+    try {
+      const order = await createOrder({
+        items: checkoutItems(),
+        paymentMethod,
+        notes: orderNote,
+      })
+
+      if (paymentMethod === "online") {
+        clearCart()
+        router.push(`/payment/${order.id}`)
+      } else {
+        clearCart()
+        toast.success("Siparişiniz onaya gönderildi!")
+        router.push(`/orders/${order.id}?created=1`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Sipariş oluşturulamadı")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleCreateRfq = () => {
-    toast.success("Talep talebiniz oluşturuldu. En kısa sürede dönüş yapılacaktır.", { duration: 4000 })
+  const handleCreateRfq = async () => {
+    if (!isAuthenticated) {
+      toast.error("Teklif almak için giriş yapın")
+      router.push("/login")
+      return
+    }
+    if (items.length === 0) return
+
+    setSubmitting(true)
+    try {
+      const order = await createOrder({
+        items: checkoutItems(),
+        paymentMethod: "havale",
+        notes: orderNote,
+        asQuotation: true,
+      })
+      clearCart()
+      toast.success("Teklif talebiniz oluşturuldu")
+      router.push(`/orders/${order.id}?created=1`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Teklif oluşturulamadı")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
     <Shell>
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center">
@@ -66,13 +131,12 @@ export default function CartPage() {
           </div>
         ) : (
           <div className="grid lg:grid-cols-3 gap-6">
-            {/* Cart Items */}
             <div className="lg:col-span-2 space-y-3">
-              <p className="text-sm text-white/60 px-1">Tüm fiyatlar KDV hariç bayi fiyatıdır. Kesin fiyatlandırma sipariş onayında oluşturulur.</p>
+              <p className="text-sm text-white/60 px-1">Tüm fiyatlar KDV hariç bayi fiyatıdır.</p>
 
               <div className="flex items-center gap-2 text-xs text-accent bg-accent/5 px-3 py-2 rounded-lg">
                 <AlertCircle size={14} />
-                %25 Bayi İndirimi uygulanmaktadır
+                %{DEALER_DISCOUNT_RATE * 100} Bayi İndirimi uygulanmaktadır
               </div>
 
               {items.map((item) => (
@@ -85,8 +149,13 @@ export default function CartPage() {
                 >
                   <GlassCard intensity="light" className="p-4">
                     <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center shrink-0">
-                        <Package size={28} className="text-white/20" />
+                      <div className="w-16 h-16 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center shrink-0 overflow-hidden">
+                        {item.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={item.image} alt={item.productName} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package size={28} className="text-white/20" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -127,6 +196,45 @@ export default function CartPage() {
                 </motion.div>
               ))}
 
+              {/* Ödeme Yöntemi */}
+              <GlassCard intensity="light" className="p-4 space-y-3">
+                <label className="text-sm font-medium text-white block">Ödeme Yöntemi</label>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("havale")}
+                    className={`text-left p-3 rounded-xl border transition-all ${
+                      paymentMethod === "havale"
+                        ? "border-accent/50 bg-accent/5"
+                        : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Building2 size={16} className={paymentMethod === "havale" ? "text-accent" : "text-white/40"} />
+                      <span className="text-sm font-medium text-white">Havale / EFT</span>
+                      {paymentMethod === "havale" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
+                    </div>
+                    <p className="text-xs text-white/40 mt-1">Yönetici onayına gönderilir</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("online")}
+                    className={`text-left p-3 rounded-xl border transition-all ${
+                      paymentMethod === "online"
+                        ? "border-accent/50 bg-accent/5"
+                        : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <CreditCard size={16} className={paymentMethod === "online" ? "text-accent" : "text-white/40"} />
+                      <span className="text-sm font-medium text-white">Online Ödeme</span>
+                      {paymentMethod === "online" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
+                    </div>
+                    <p className="text-xs text-white/40 mt-1">Kredi kartı ile anında onay (PayTR)</p>
+                  </button>
+                </div>
+              </GlassCard>
+
               {/* Sipariş Notu */}
               <GlassCard intensity="light" className="p-4">
                 <label className="text-sm font-medium text-white mb-2 block">Sipariş Notu</label>
@@ -149,7 +257,7 @@ export default function CartPage() {
                     <span className="text-white">{formatPrice(subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-white/40">Bayi İndirimi (%25)</span>
+                    <span className="text-white/40">Bayi İndirimi (%{DEALER_DISCOUNT_RATE * 100})</span>
                     <span className="text-success">-{formatPrice(discount)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -157,7 +265,7 @@ export default function CartPage() {
                     <span className="text-white">{shipping === 0 ? "Ücretsiz" : formatPrice(shipping)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-white/40">KDV (%20)</span>
+                    <span className="text-white/40">KDV (%{TAX_RATE * 100})</span>
                     <span className="text-white">{formatPrice(tax)}</span>
                   </div>
                   <div className="border-t border-white/10 pt-2 flex justify-between">
@@ -166,7 +274,7 @@ export default function CartPage() {
                   </div>
                 </div>
 
-                {shipping === 0 && (
+                {shipping === 0 && subtotal > 0 && (
                   <div className="flex items-center gap-2 text-xs text-success bg-success/5 px-3 py-2 rounded-lg">
                     <Truck size={12} />
                     Ücretsiz kargo hakkınız bulunuyor
@@ -174,12 +282,33 @@ export default function CartPage() {
                 )}
 
                 <div className="space-y-2">
-                  <Button size="lg" className="w-full" icon={<CreditCard size={16} />} onClick={handleSubmitOrder}>
-                    Siparişi Onaya Gönder
+                  <Button
+                    size="lg"
+                    className="w-full"
+                    icon={<CreditCard size={16} />}
+                    onClick={handleSubmitOrder}
+                    disabled={submitting}
+                  >
+                    {submitting
+                      ? "İşleniyor..."
+                      : paymentMethod === "online"
+                        ? "Ödemeye Geç"
+                        : "Siparişi Onaya Gönder"}
                   </Button>
-                  <p className="text-xs text-center text-white/30">Siparişiniz yöneticinizin onayına gönderilecektir</p>
-                  <Button variant="outline" size="md" className="w-full" icon={<FileText size={14} />} onClick={handleCreateRfq}>
-                    Talep Oluştur
+                  <p className="text-xs text-center text-white/30">
+                    {paymentMethod === "online"
+                      ? "Güvenli ödeme sayfasına yönlendirileceksiniz"
+                      : "Siparişiniz yöneticinizin onayına gönderilecektir"}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="md"
+                    className="w-full"
+                    icon={<FileText size={14} />}
+                    onClick={handleCreateRfq}
+                    disabled={submitting}
+                  >
+                    Teklif Talebi Oluştur
                   </Button>
                   <Link href="/products">
                     <Button variant="outline" size="md" className="w-full">Ürünlere Dön</Button>
@@ -188,7 +317,7 @@ export default function CartPage() {
 
                 <div className="flex items-center gap-2 text-xs text-white/30">
                   <AlertTriangle size={12} />
-                  Fiyatlar sipariş onayı anında güncellenir
+                  Fiyatlar sipariş anındaki bayi fiyatıdır
                 </div>
               </GlassCard>
             </div>
