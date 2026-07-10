@@ -255,6 +255,7 @@ function ProductsContent() {
                 warehouseId: product.stock[0]?.warehouseId || "",
                 minOrderQuantity: product.minOrderQuantity,
               })
+              toast.success(`${product.name} sepete eklendi`)
             }} />
                   </motion.div>
                 ))}

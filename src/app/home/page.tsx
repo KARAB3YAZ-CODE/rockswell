@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
+import toast from "react-hot-toast"
 import { Shell } from "@/components/layout/shell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -504,6 +505,7 @@ export default function CustomerHomePage() {
                           minOrderQuantity: item.minOrderQuantity,
                         })
                       }
+                      toast.success(`${batchItems.length} ürün sepete eklendi`)
                       setBatchItems([])
                     }}
                     className="flex items-center gap-2 h-9 px-4 rounded-lg bg-accent text-black text-xs font-bold hover:bg-accent/90 active:scale-95 transition-all"

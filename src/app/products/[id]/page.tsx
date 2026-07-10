@@ -231,18 +231,21 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <Button
                   size="lg"
                   icon={<ShoppingCart size={18} />}
-                  onClick={() => addItem({
-                    productId: product.id,
-                    productName: product.name,
-                    sku: product.sku,
-                    brand: product.brand,
-                    image: product.images[0] || "",
-                    quantity,
-                    unitPrice: effectivePrice,
-                    totalPrice: effectivePrice * quantity,
-                    warehouseId: product.stock[0]?.warehouseId || "",
-                    minOrderQuantity: product.minOrderQuantity,
-                  })}
+                  onClick={() => {
+                    addItem({
+                      productId: product.id,
+                      productName: product.name,
+                      sku: product.sku,
+                      brand: product.brand,
+                      image: product.images[0] || "",
+                      quantity,
+                      unitPrice: effectivePrice,
+                      totalPrice: effectivePrice * quantity,
+                      warehouseId: product.stock[0]?.warehouseId || "",
+                      minOrderQuantity: product.minOrderQuantity,
+                    })
+                    toast.success(`${product.name} sepete eklendi`)
+                  }}
                   className="flex-1"
                 >
                   Sepete Ekle

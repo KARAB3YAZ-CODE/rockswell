@@ -116,7 +116,7 @@ export default function FrequentPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-1">
-                          <Button size="sm" onClick={(e) => { e.preventDefault(); addItem({ productId: product.id, productName: product.name, sku: product.sku, brand: product.brand, image: product.images[0] || "", quantity: product.minOrderQuantity, unitPrice: product.basePrice, totalPrice: product.basePrice * product.minOrderQuantity, warehouseId: product.stock[0]?.warehouseId || "", minOrderQuantity: product.minOrderQuantity }) }} icon={<Plus size={14} />} />
+                          <Button size="sm" onClick={(e) => { e.preventDefault(); addItem({ productId: product.id, productName: product.name, sku: product.sku, brand: product.brand, image: product.images[0] || "", quantity: product.minOrderQuantity, unitPrice: product.basePrice, totalPrice: product.basePrice * product.minOrderQuantity, warehouseId: product.stock[0]?.warehouseId || "", minOrderQuantity: product.minOrderQuantity }); toast.success(`${product.name} sepete eklendi`) }} icon={<Plus size={14} />} />
                           <Button variant="ghost" size="sm" onClick={(e) => { e.preventDefault(); toast.success("Teklif talebiniz alındı") }} icon={<FileText size={14} />}>
                             Teklif
                           </Button>
@@ -168,7 +168,7 @@ export default function FrequentPage() {
                               <p className="text-[11px] text-white/30 line-through">{formatPrice(listPrice)}</p>
                             </div>
                             <div className="flex items-center gap-1">
-                              <Button size="sm" variant="secondary" onClick={(e) => { e.preventDefault(); addItem({ productId: product.id, productName: product.name, sku: product.sku, brand: product.brand, image: product.images[0] || "", quantity: product.minOrderQuantity, unitPrice: product.basePrice, totalPrice: product.basePrice * product.minOrderQuantity, warehouseId: product.stock[0]?.warehouseId || "", minOrderQuantity: product.minOrderQuantity }) }} icon={<Plus size={14} />} />
+                              <Button size="sm" variant="secondary" onClick={(e) => { e.preventDefault(); addItem({ productId: product.id, productName: product.name, sku: product.sku, brand: product.brand, image: product.images[0] || "", quantity: product.minOrderQuantity, unitPrice: product.basePrice, totalPrice: product.basePrice * product.minOrderQuantity, warehouseId: product.stock[0]?.warehouseId || "", minOrderQuantity: product.minOrderQuantity }); toast.success(`${product.name} sepete eklendi`) }} icon={<Plus size={14} />} />
                               <Button variant="ghost" size="sm" onClick={(e) => { e.preventDefault(); toast.success("Teklif talebiniz alındı") }} icon={<FileText size={14} />} />
                             </div>
                           </div>
