@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 
 interface UseDataResult<T> {
   data: T | null
@@ -15,25 +15,57 @@ export function useData<T>(
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await fetcher()
-      setData(result)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Bir hata oluştu")
-    } finally {
-      setLoading(false)
+  // Always call the latest fetcher without making it a dependency.
+  const fetcherRef = useRef(fetcher)
+  fetcherRef.current = fetcher
+
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
+  }, [])
+
+  // Dedupe identical requests (e.g. React StrictMode double-invoke in dev,
+  // or repeated mounts with the same deps) so data is fetched only once.
+  const inFlightRef = useRef<{ key: string; promise: Promise<T> } | null>(null)
+
+  const run = useCallback(
+    (force = false) => {
+      const key = JSON.stringify(deps)
+      if (!force && inFlightRef.current?.key === key) {
+        return inFlightRef.current.promise
+      }
+
+      setLoading(true)
+      setError(null)
+
+      const promise = fetcherRef.current()
+        .then((result) => {
+          if (mountedRef.current) setData(result)
+          return result
+        })
+        .catch((e: unknown) => {
+          if (mountedRef.current) setError(e instanceof Error ? e.message : "Bir hata oluştu")
+          throw e
+        })
+        .finally(() => {
+          if (mountedRef.current) setLoading(false)
+        })
+
+      inFlightRef.current = { key, promise }
+      return promise
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    deps
+  )
 
   useEffect(() => {
-    fetch()
-  }, [fetch])
+    run().catch(() => {})
+  }, [run])
 
-  return { data, loading, error, refetch: fetch }
+  return { data, loading, error, refetch: () => run(true) }
 }
 
 export function useProduct(id: string) {

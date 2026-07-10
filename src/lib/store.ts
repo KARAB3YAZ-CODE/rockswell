@@ -100,9 +100,11 @@ export const useUIStore = create<UIStore>((set) => ({
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   notifications: [],
   addNotification: (notification) =>
-    set((state) => ({
-      notifications: [notification, ...state.notifications],
-    })),
+    set((state) =>
+      state.notifications.some((n) => n.id === notification.id)
+        ? state
+        : { notifications: [notification, ...state.notifications] }
+    ),
   markAsRead: (id) =>
     set((state) => ({
       notifications: state.notifications.map((n) =>
