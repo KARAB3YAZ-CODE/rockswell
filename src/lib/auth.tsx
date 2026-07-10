@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { useUIStore } from "@/lib/store"
+import { supabase } from "@/lib/supabase"
 import * as api from "@/lib/api"
 import type { User, Company } from "@/lib/types"
 
@@ -29,50 +30,55 @@ export interface RegisterData {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-const AUTH_KEY = "rockswell_auth"
-
-function saveSession(user: User, company: Company) {
-  if (typeof window === "undefined") return
-  localStorage.setItem(AUTH_KEY, JSON.stringify({ user, company }))
-}
-
-function clearSession() {
-  if (typeof window === "undefined") return
-  localStorage.removeItem(AUTH_KEY)
-}
-
-function loadSession(): { user: User; company: Company } | null {
-  if (typeof window === "undefined") return null
-  try {
-    const raw = localStorage.getItem(AUTH_KEY)
-    if (!raw) return null
-    const data = JSON.parse(raw)
-    if (data.user && data.company) return data
-    return null
-  } catch {
-    return null
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const { currentUser, setCurrentUser, currentCompany, setCurrentCompany } = useUIStore()
   const router = useRouter()
 
   useEffect(() => {
-    const session = loadSession()
-    if (session) {
-      api.restoreSession(session.user, session.company)
-      setCurrentUser(session.user)
-      setCurrentCompany(session.company)
+    let mounted = true
+
+    async function init() {
+      try {
+        const session = await api.initSessionFromSupabase()
+        if (mounted && session) {
+          setCurrentUser(session.user)
+          setCurrentCompany(session.company)
+        }
+      } finally {
+        if (mounted) setLoading(false)
+      }
     }
-    setLoading(false)
+
+    init()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return
+
+      if (event === "SIGNED_OUT") {
+        setCurrentUser(null)
+        setCurrentCompany(null)
+        return
+      }
+
+      if (session?.user && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) {
+        const restored = await api.initSessionFromSupabase()
+        if (restored) {
+          setCurrentUser(restored.user)
+          setCurrentCompany(restored.company)
+        }
+      }
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [setCurrentUser, setCurrentCompany])
 
   const login = useCallback(async (email: string, password: string) => {
     const user = await api.login(email, password)
     const company = await api.getCurrentCompany()
-    saveSession(user, company)
     setCurrentUser(user)
     setCurrentCompany(company)
   }, [setCurrentUser, setCurrentCompany])
@@ -83,10 +89,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await api.logout()
-    clearSession()
     setCurrentUser(null)
     setCurrentCompany(null)
-  }, [setCurrentUser, setCurrentCompany])
+    router.push("/login")
+  }, [setCurrentUser, setCurrentCompany, router])
 
   return (
     <AuthContext.Provider
