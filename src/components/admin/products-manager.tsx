@@ -350,63 +350,105 @@ export function AdminProducts() {
               <p className="text-sm text-white/40">Ürün bulunamadı</p>
             </div>
           ) : view === "grid" ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+            <div
+              className="grid gap-4"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}
+            >
               {pageItems.map((product) => {
                 const missing = missingProduct(product)
                 const isSel = selected.has(product.id)
+                const thumb = product.images.find((u) => Boolean(u?.trim()))
                 return (
                   <div
                     key={product.id}
                     className={cn(
-                      "rounded-2xl border bg-gradient-to-b from-white/[0.05] to-transparent overflow-hidden transition-colors",
-                      isSel ? "border-accent/50 ring-1 ring-accent/20" : "border-white/[0.08] hover:border-white/15"
+                      "rounded-2xl border bg-[#14161c] overflow-hidden transition-all flex flex-col min-w-0",
+                      isSel
+                        ? "border-accent/50 shadow-[0_0_0_1px_rgba(57,255,20,0.15)]"
+                        : "border-white/[0.08] hover:border-white/20 hover:bg-[#171a22]"
                     )}
                   >
-                    <div className="relative aspect-[4/3] bg-black/25 border-b border-white/5">
-                      {product.images[0] ? (
+                    <div className="relative w-full aspect-square bg-[#0c0e12] border-b border-white/5">
+                      {thumb ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={product.images[0]} alt="" className="w-full h-full object-contain p-3" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package size={28} className="text-white/15" />
-                        </div>
-                      )}
-                      <label className="absolute top-2 left-2 w-5 h-5 rounded-md bg-black/50 border border-white/20 flex items-center justify-center cursor-pointer">
+                        <img
+                          src={thumb}
+                          alt={product.name}
+                          className="absolute inset-0 w-full h-full object-contain p-4"
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none"
+                            const fallback = e.currentTarget.nextElementSibling as HTMLElement | null
+                            if (fallback) fallback.classList.remove("hidden")
+                          }}
+                        />
+                      ) : null}
+                      <div
+                        className={cn(
+                          "absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/25",
+                          thumb ? "hidden" : ""
+                        )}
+                      >
+                        <Package size={36} strokeWidth={1.25} />
+                        <span className="text-[11px]">Fotoğraf yok</span>
+                      </div>
+
+                      <label
+                        className="absolute top-3 left-3 z-10 flex items-center justify-center w-6 h-6 rounded-lg bg-black/60 border border-white/15 backdrop-blur-sm cursor-pointer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="checkbox"
                           checked={isSel}
                           onChange={() => toggleOne(product.id)}
-                          className="accent-[var(--accent,#39ff14)]"
+                          className="w-3.5 h-3.5 accent-[#39ff14]"
                         />
                       </label>
-                      <div className="absolute top-2 right-2">
+                      <div className="absolute top-3 right-3 z-10">
                         <Badge variant={product.isActive ? "success" : "default"} size="sm">
                           {product.isActive ? "Aktif" : "Pasif"}
                         </Badge>
                       </div>
                     </div>
-                    <div className="p-3 space-y-2">
-                      <div>
-                        <p className="text-sm font-medium text-white line-clamp-2 leading-snug">{product.name}</p>
-                        <p className="text-[11px] text-white/35 mt-1 truncate">
-                          {product.brand || "—"} · {product.category || "—"}
+
+                    <div className="p-4 flex flex-col gap-3 flex-1">
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-[13px] font-semibold text-white leading-snug line-clamp-2" title={product.name}>
+                          {product.name}
                         </p>
-                        <p className="text-[10px] text-white/25 font-mono mt-0.5">{product.sku}</p>
+                        <p className="text-[11px] text-white/40 truncate">
+                          {[product.brand, product.category].filter(Boolean).join(" · ") || "—"}
+                        </p>
+                        <p className="text-[10px] text-white/25 font-mono truncate">{product.sku}</p>
                       </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-accent tabular-nums">{formatPrice(product.basePrice)}</span>
-                        <span className="text-[11px] text-white/40">Stok {product.stock[0]?.available ?? 0}</span>
+
+                      <div className="flex items-end justify-between gap-2 mt-auto">
+                        <div>
+                          <p className="text-base font-bold text-accent tabular-nums leading-none">
+                            {formatPrice(product.basePrice)}
+                          </p>
+                          <p className="text-[11px] text-white/35 mt-1">
+                            Stok {product.stock[0]?.available ?? 0}
+                          </p>
+                        </div>
+                        {missing.length > 0 && <Warn items={missing} />}
                       </div>
-                      {missing.length > 0 && <Warn items={missing} />}
-                      <div className="flex items-center gap-1 pt-1">
+
+                      <div className="flex items-center gap-1 pt-1 border-t border-white/5">
                         <a
                           href={siteAbsoluteUrl(`/products/${product.id}`)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-white/35 hover:text-white hover:bg-white/5"
+                          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5"
                           title="Mağazada gör"
                         >
-                          <Eye size={14} />
+                          <Eye size={15} />
                         </a>
-                        <IconBtn icon={Pencil} label="Düzenle" onClick={() => setForm(product)} />
+                        <button
+                          type="button"
+                          onClick={() => setForm(product)}
+                          className="flex-1 h-9 rounded-xl text-xs font-medium text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                        >
+                          Düzenle
+                        </button>
                         <IconBtn icon={Trash2} label="Sil" tone="danger" onClick={() => setDel(product)} />
                       </div>
                     </div>
@@ -444,12 +486,17 @@ export function AdminProducts() {
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-11 h-11 rounded-xl bg-black/30 border border-white/5 overflow-hidden shrink-0 flex items-center justify-center">
-                                {product.images[0] ? (
+                              <div className="w-14 h-14 rounded-xl bg-[#0c0e12] border border-white/5 overflow-hidden shrink-0 flex items-center justify-center">
+                                {product.images.find((u) => u?.trim()) ? (
                                   // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={product.images[0]} alt="" className="w-full h-full object-contain p-1" />
+                                  <img
+                                    src={product.images.find((u) => u?.trim())}
+                                    alt=""
+                                    className="w-full h-full object-contain p-1.5"
+                                    loading="lazy"
+                                  />
                                 ) : (
-                                  <Package size={14} className="text-white/25" />
+                                  <Package size={16} className="text-white/25" />
                                 )}
                               </div>
                               <div className="min-w-0">

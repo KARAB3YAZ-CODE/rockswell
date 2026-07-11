@@ -31,6 +31,21 @@ function toJson<T>(value: T): Json {
 }
 
 export function mapProduct(row: Record<string, unknown>): Product {
+  const rawImages = row.images
+  const images = Array.isArray(rawImages)
+    ? rawImages
+        .map((item) => {
+          if (typeof item === "string") return item.trim()
+          if (item && typeof item === "object") {
+            const o = item as Record<string, unknown>
+            const url = o.url ?? o.src ?? o.href
+            return url ? String(url).trim() : ""
+          }
+          return ""
+        })
+        .filter(Boolean)
+    : []
+
   return {
     id: String(row.id),
     sku: String(row.sku),
@@ -42,7 +57,7 @@ export function mapProduct(row: Record<string, unknown>): Product {
     oemNumbers: (row.oem_numbers as string[]) ?? [],
     crossNumbers: (row.cross_numbers as string[]) ?? [],
     compatibleVehicles: (row.compatible_vehicles as Product["compatibleVehicles"]) ?? [],
-    images: (row.images as string[]) ?? [],
+    images,
     specifications: (row.specifications as Product["specifications"]) ?? [],
     documents: (row.documents as Product["documents"]) ?? [],
     videos: (row.videos as string[]) ?? [],
