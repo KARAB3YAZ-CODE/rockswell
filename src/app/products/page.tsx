@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useProducts } from "@/hooks/use-data"
 import { useDiscountRate } from "@/hooks/use-data"
-import { useCartStore } from "@/lib/store"
+import { useCartStore, useCompareStore } from "@/lib/store"
 import { cn, formatPrice } from "@/lib/utils"
 import { dealerPriceDisplay } from "@/lib/pricing"
 import type { Product } from "@/lib/types"
@@ -21,7 +21,7 @@ import {
   Search, Grid3X3, List, ChevronDown,
   Package, Star, Truck,
   Filter, ChevronLeft, ChevronRight,
-  Plus,
+  Plus, GitCompare,
 } from "lucide-react"
 
 export default function ProductsPage() {
@@ -256,6 +256,9 @@ function ProductsContent() {
                 totalPrice: product.basePrice * product.minOrderQuantity,
                 warehouseId: product.stock[0]?.warehouseId || "",
                 minOrderQuantity: product.minOrderQuantity,
+                priceLocked: product.customerPriceApplied,
+                category: product.category,
+                vehicleBrands: product.compatibleVehicles.map((v) => v.brand),
               })
               toast.success(`${product.name} sepete eklendi`)
             }} />
@@ -319,8 +322,29 @@ function ProductsContent() {
 
 function ProductCard({ product, viewMode, onAddToCart }: { product: Product; viewMode: "grid" | "list"; onAddToCart: () => void }) {
   const { discountRate: companyRate } = useDiscountRate()
+  const compareItems = useCompareStore((s) => s.items)
+  const addCompare = useCompareStore((s) => s.addItem)
+  const removeCompare = useCompareStore((s) => s.removeItem)
   const totalStock = product.stock.reduce((acc, s) => acc + s.available, 0)
-  const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(product.basePrice, companyRate)
+  const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(
+    product.basePrice,
+    companyRate,
+    product.customerPriceApplied
+  )
+  const inCompare = compareItems.includes(product.id)
+
+  const toggleCompare = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (inCompare) {
+      removeCompare(product.id)
+      toast.success("Karşılaştırmadan çıkarıldı")
+    } else if (compareItems.length >= 4) {
+      toast.error("En fazla 4 ürün karşılaştırabilirsiniz")
+    } else {
+      addCompare(product.id)
+      toast.success("Karşılaştırmaya eklendi")
+    }
+  }
 
   if (viewMode === "list") {
     return (
@@ -344,8 +368,15 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
             <h3 className="text-sm font-medium text-white mt-0.5 truncate">{product.name}</h3>
             <div className="flex items-center gap-3 mt-0.5">
               <p className="text-sm font-semibold text-accent">{formatPrice(dealerPrice)}</p>
-              <p className="text-xs text-white/30 line-through">{formatPrice(listPrice)}</p>
-              <Badge variant="success" size="sm">%{discountRate}</Badge>
+              {!product.customerPriceApplied && (
+                <>
+                  <p className="text-xs text-white/30 line-through">{formatPrice(listPrice)}</p>
+                  <Badge variant="success" size="sm">%{discountRate}</Badge>
+                </>
+              )}
+              {product.customerPriceApplied && (
+                <Badge variant="success" size="sm">Özel fiyat</Badge>
+              )}
             </div>
           </div>
           <div className="text-right shrink-0 space-y-1">
@@ -354,6 +385,16 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
               {totalStock >= 10 ? "Stokta" : "Sınırlı Stok"} ({totalStock})
             </p>
           </div>
+          <button
+            type="button"
+            onClick={toggleCompare}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors ${
+              inCompare ? "border-accent/40 text-accent bg-accent/10" : "border-white/10 text-white/40 hover:text-white"
+            }`}
+            title="Karşılaştır"
+          >
+            <GitCompare size={14} />
+          </button>
           <Button size="sm" onClick={(e) => { e.preventDefault(); onAddToCart() }} icon={<Plus size={14} />} />
         </div>
       </Link>
@@ -372,7 +413,7 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
             </Badge>
           )}
           <Badge variant="success" size="sm" className="absolute bottom-2 left-2">
-            %{discountRate} İskonto
+            {product.customerPriceApplied ? "Özel fiyat" : `%${discountRate} İskonto`}
           </Badge>
           <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -409,12 +450,24 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
               </div>
               <p className="text-[11px] text-white/30 line-through">{formatPrice(listPrice)}</p>
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={(e) => { e.preventDefault(); onAddToCart() }}
-              icon={<Plus size={14} />}
-            />
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={toggleCompare}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors ${
+                  inCompare ? "border-accent/40 text-accent bg-accent/10" : "border-white/10 text-white/40 hover:text-white"
+                }`}
+                title="Karşılaştır"
+              >
+                <GitCompare size={14} />
+              </button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={(e) => { e.preventDefault(); onAddToCart() }}
+                icon={<Plus size={14} />}
+              />
+            </div>
           </div>
         </div>
       </Card>

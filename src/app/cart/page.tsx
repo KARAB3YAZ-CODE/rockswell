@@ -11,20 +11,25 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useCartStore } from "@/lib/store"
 import { formatPrice } from "@/lib/utils"
-import { computeCartPricing, DEFAULT_DISCOUNT_RATE, HAVALE_EXTRA_DISCOUNT_RATE, TAX_RATE } from "@/lib/pricing"
-import { createOrder, getCustomerDiscountRate, type PaymentMethod } from "@/lib/api"
+import {
+  computeCartPricingFromLines,
+  DEFAULT_DISCOUNT_RATE,
+  HAVALE_EXTRA_DISCOUNT_RATE,
+  TAX_RATE,
+} from "@/lib/pricing"
+import { createOrder, getCampaigns, getCustomerDiscountRate, type PaymentMethod } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useData } from "@/hooks/use-data"
 import {
   ShoppingCart, Trash2, Plus, Minus, Package,
   CreditCard, Truck, Building2, CheckCircle2,
-  FileText, AlertTriangle, ShoppingBag, AlertCircle,
+  FileText, ShoppingBag, AlertCircle, Tag,
 } from "lucide-react"
 
 export default function CartPage() {
   const router = useRouter()
   const { isAuthenticated } = useAuth()
-  const { items, updateQuantity, removeItem, clearCart, getSubtotal } = useCartStore()
+  const { items, updateQuantity, removeItem, clearCart } = useCartStore()
   const [orderNote, setOrderNote] = useState("")
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("havale")
   const [submitting, setSubmitting] = useState(false)
@@ -33,13 +38,31 @@ export default function CartPage() {
     () => (isAuthenticated ? getCustomerDiscountRate() : Promise.resolve(DEFAULT_DISCOUNT_RATE)),
     [isAuthenticated]
   )
-  const discountRate = fetchedRate ?? DEFAULT_DISCOUNT_RATE
-  const subtotal = getSubtotal()
-  const { discount, paymentDiscount, shipping, tax, total, paymentDiscountRate } = computeCartPricing(
-    subtotal,
-    discountRate,
-    paymentMethod
+  const { data: campaigns } = useData(
+    () => (isAuthenticated ? getCampaigns().catch(() => []) : Promise.resolve([])),
+    [isAuthenticated]
   )
+
+  const discountRate = fetchedRate ?? DEFAULT_DISCOUNT_RATE
+  const pricingLines = items.map((i) => ({
+    unitPrice: i.unitPrice,
+    quantity: i.quantity,
+    priceLocked: i.priceLocked,
+    category: i.category,
+    brand: i.brand,
+    vehicleBrands: i.vehicleBrands,
+  }))
+  const {
+    subtotal,
+    discount,
+    campaignDiscount,
+    campaignName,
+    paymentDiscount,
+    shipping,
+    tax,
+    total,
+    paymentDiscountRate,
+  } = computeCartPricingFromLines(pricingLines, discountRate, paymentMethod, campaigns ?? [])
 
   const checkoutItems = () =>
     items.map((i) => ({
@@ -147,7 +170,8 @@ export default function CartPage() {
               <div className="flex items-center gap-2 text-xs text-accent bg-accent/5 px-3 py-2 rounded-lg">
                 <AlertCircle size={14} />
                 %{discountRate} Bayi İndirimi
-                {paymentMethod === "havale" ? ` + %${HAVALE_EXTRA_DISCOUNT_RATE} Havale/EFT İndirimi` : ""} uygulanmaktadır
+                {paymentMethod === "havale" ? ` + %${HAVALE_EXTRA_DISCOUNT_RATE} Havale/EFT İndirimi` : ""}
+                {campaignDiscount > 0 && campaignName ? ` + kampanya` : ""} uygulanmaktadır
               </div>
 
               {items.map((item) => (
@@ -172,6 +196,9 @@ export default function CartPage() {
                         <div className="flex items-center gap-2">
                           <Badge variant="premium" size="sm">{item.brand}</Badge>
                           <span className="text-[10px] text-white/30 font-mono">{item.sku}</span>
+                          {item.priceLocked && (
+                            <Badge variant="success" size="sm">Özel fiyat</Badge>
+                          )}
                         </div>
                         <Link href={`/products/${item.productId}`}>
                           <h3 className="text-sm font-medium text-white mt-0.5 hover:text-accent transition-colors">{item.productName}</h3>
@@ -207,7 +234,6 @@ export default function CartPage() {
                 </motion.div>
               ))}
 
-              {/* Ödeme Yöntemi */}
               <GlassCard intensity="light" className="p-4 space-y-3">
                 <label className="text-sm font-medium text-white block">Ödeme Yöntemi</label>
                 <div className="grid sm:grid-cols-2 gap-3">
@@ -246,7 +272,6 @@ export default function CartPage() {
                 </div>
               </GlassCard>
 
-              {/* Sipariş Notu */}
               <GlassCard intensity="light" className="p-4">
                 <label className="text-sm font-medium text-white mb-2 block">Sipariş Notu</label>
                 <textarea
@@ -258,7 +283,6 @@ export default function CartPage() {
               </GlassCard>
             </div>
 
-            {/* Cart Summary */}
             <div className="lg:col-span-1">
               <GlassCard intensity="medium" className="p-5 space-y-4 sticky top-24">
                 <h3 className="text-sm font-semibold text-white">Sipariş Özeti</h3>
@@ -267,10 +291,21 @@ export default function CartPage() {
                     <span className="text-white/40">Ara Toplam</span>
                     <span className="text-white">{formatPrice(subtotal)}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-white/40">Bayi İndirimi (%{discountRate})</span>
-                    <span className="text-success">-{formatPrice(discount)}</span>
-                  </div>
+                  {discount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-white/40">Bayi İndirimi (%{discountRate})</span>
+                      <span className="text-success">-{formatPrice(discount)}</span>
+                    </div>
+                  )}
+                  {campaignDiscount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-white/40 flex items-center gap-1">
+                        <Tag size={12} />
+                        {campaignName ?? "Kampanya"}
+                      </span>
+                      <span className="text-success">-{formatPrice(campaignDiscount)}</span>
+                    </div>
+                  )}
                   {paymentDiscountRate > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-white/40">Havale / EFT İndirimi (%{paymentDiscountRate})</span>
@@ -318,23 +353,15 @@ export default function CartPage() {
                       : "Siparişiniz yöneticinizin onayına gönderilecektir"}
                   </p>
                   <Button
-                    variant="outline"
                     size="md"
+                    variant="secondary"
                     className="w-full"
                     icon={<FileText size={14} />}
                     onClick={handleCreateRfq}
                     disabled={submitting}
                   >
-                    Teklif Talebi Oluştur
+                    Teklif İste
                   </Button>
-                  <Link href="/products">
-                    <Button variant="outline" size="md" className="w-full">Ürünlere Dön</Button>
-                  </Link>
-                </div>
-
-                <div className="flex items-center gap-2 text-xs text-white/30">
-                  <AlertTriangle size={12} />
-                  Fiyatlar sipariş anındaki bayi fiyatıdır
                 </div>
               </GlassCard>
             </div>

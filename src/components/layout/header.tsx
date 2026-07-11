@@ -427,8 +427,8 @@ export function Header() {
                   <div className="p-1">
                     {[
                       { label: "Profil", icon: User, href: "/account" },
-                      { label: "Ayarlar", icon: Settings, href: "/account?tab=settings" },
-                      { label: "Destek", icon: MessageSquare, href: "/account?tab=support" },
+                      { label: "Ayarlar", icon: Settings, href: "/account/settings" },
+                      { label: "Destek", icon: MessageSquare, href: "/account/support" },
                     ].map((item) => (
                       <Link
                         key={item.label}

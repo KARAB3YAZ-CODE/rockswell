@@ -44,6 +44,15 @@ export async function POST(request: Request) {
     } catch {
       /* best-effort */
     }
+    try {
+      await service
+        .from("invoices")
+        .update({ status: "paid", paid_date: new Date().toISOString() })
+        .eq("order_id", order.id)
+        .neq("status", "cancelled")
+    } catch {
+      /* best-effort */
+    }
   } else {
     await service
       .from("orders")

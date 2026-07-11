@@ -511,7 +511,7 @@ export default function CustomerHomePage() {
                             </div>
                           </div>
                           <div className="text-right shrink-0 mr-1">
-                            <p className="text-sm font-bold text-accent">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate).dealerPrice)}</p>
+                            <p className="text-sm font-bold text-accent">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate, product.customerPriceApplied).dealerPrice)}</p>
                           </div>
                           <button
                             onClick={() => addToBatch(product)}
@@ -830,7 +830,7 @@ export default function CustomerHomePage() {
                       <p className="text-sm font-medium text-white/90 truncate group-hover:text-white transition-colors">{product.name}</p>
                       <p className="text-xs text-white/30 mt-0.5 font-mono">{product.sku}</p>
                       <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-                        <p className="text-base font-bold text-accent">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate).dealerPrice)}</p>
+                        <p className="text-base font-bold text-accent">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate, product.customerPriceApplied).dealerPrice)}</p>
                         {product.stock[0]?.available > 0 ? (
                           <span className="flex items-center gap-1 text-[10px] text-success">
                             <span className="w-1 h-1 rounded-full bg-success" />
@@ -937,7 +937,7 @@ export default function CustomerHomePage() {
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-white/90 truncate">{product.name}</p>
                           <p className="text-[10px] text-white/30 font-mono">{product.sku}</p>
-                          <p className="text-xs font-bold text-accent mt-0.5">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate).dealerPrice)}</p>
+                          <p className="text-xs font-bold text-accent mt-0.5">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate, product.customerPriceApplied).dealerPrice)}</p>
                         </div>
                       </div>
                     </Link>

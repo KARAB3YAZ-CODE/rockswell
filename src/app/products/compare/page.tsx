@@ -126,7 +126,11 @@ function CompareContent() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {compareProducts.slice(0, 4).map((product, i) => {
                 const totalStock = product.stock.reduce((acc, s) => acc + s.available, 0)
-                const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(product.basePrice, companyRate)
+                const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(
+                  product.basePrice,
+                  companyRate,
+                  product.customerPriceApplied
+                )
                 return (
                   <motion.div
                     key={product.id}
@@ -178,6 +182,9 @@ function CompareContent() {
                             totalPrice: product.basePrice * product.minOrderQuantity,
                             warehouseId: product.stock[0]?.warehouseId || "",
                             minOrderQuantity: product.minOrderQuantity,
+                            priceLocked: product.customerPriceApplied,
+                            category: product.category,
+                            vehicleBrands: product.compatibleVehicles.map((v) => v.brand),
                           })
                           toast.success("Sepete eklendi")
                         }}
@@ -200,7 +207,7 @@ function CompareContent() {
                         if (key === "brand") return p.brand
                         if (key === "sku") return p.sku
                         if (key === "basePrice") {
-                          const { dealerPrice } = dealerPriceDisplay(p.basePrice, companyRate)
+                          const { dealerPrice } = dealerPriceDisplay(p.basePrice, companyRate, p.customerPriceApplied)
                           return formatPrice(dealerPrice)
                         }
                         if (key === "category") return p.category

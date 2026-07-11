@@ -8,6 +8,7 @@ import toast from "react-hot-toast"
 import { Button } from "@/components/ui/button"
 import { Glow } from "@/components/effects/glow"
 import { useAuth } from "@/lib/auth"
+import { requestPasswordReset } from "@/lib/api"
 import { adminAbsoluteUrl } from "@/lib/admin-host"
 
 export default function LoginPage() {
@@ -16,6 +17,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [mode, setMode] = useState<"login" | "forgot">("login")
+  const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.search.includes("registered=true")) {
@@ -43,10 +46,28 @@ export default function LoginPage() {
     try {
       await login(email, password)
       toast.success("Giriş başarılı")
-    } catch (err: any) {
-      toast.error(err.message || "Giriş başarısız")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Giriş başarısız")
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim()) {
+      toast.error("E-posta gerekli")
+      return
+    }
+    setResetting(true)
+    try {
+      await requestPasswordReset(email)
+      toast.success("Şifre sıfırlama bağlantısı e-posta adresinize gönderildi")
+      setMode("login")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Gönderilemedi")
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -68,56 +89,92 @@ export default function LoginPage() {
             </div>
             <span className="text-lg font-bold text-white">ROCKSWELL</span>
           </Link>
-          <h1 className="text-2xl font-bold text-white">Bayi Girişi</h1>
-          <p className="text-sm text-white/40 mt-1">B2B otomotiv yedek parça platformuna hoş geldiniz</p>
+          <h1 className="text-2xl font-bold text-white">
+            {mode === "forgot" ? "Şifre Sıfırlama" : "Bayi Girişi"}
+          </h1>
+          <p className="text-sm text-white/40 mt-1">
+            {mode === "forgot"
+              ? "E-posta adresinize sıfırlama bağlantısı göndereceğiz"
+              : "B2B otomotiv yedek parça platformuna hoş geldiniz"}
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-card border border-border rounded-2xl p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1.5">E-posta</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="ornek@firma.com"
-              className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all"
-              autoComplete="email"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-1.5">Şifre</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all"
-              autoComplete="current-password"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-white/50">
-              <input type="checkbox" defaultChecked className="rounded border-white/20 bg-white/5" />
-              Beni Hatırla
-            </label>
-            <button type="button" className="text-sm text-accent hover:text-accent/80 transition-colors">
-              Şifremi Unuttum
+        {mode === "forgot" ? (
+          <form onSubmit={handleForgot} className="bg-card border border-border rounded-2xl p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1.5">E-posta</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ornek@firma.com"
+                className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all"
+                autoComplete="email"
+              />
+            </div>
+            <Button type="submit" className="w-full" size="lg" disabled={resetting}>
+              {resetting ? "Gönderiliyor..." : "Sıfırlama Bağlantısı Gönder"}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setMode("login")}
+              className="w-full text-sm text-white/40 hover:text-white/60 transition-colors"
+            >
+              Girişe dön
             </button>
-          </div>
+          </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="bg-card border border-border rounded-2xl p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1.5">E-posta</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ornek@firma.com"
+                className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all"
+                autoComplete="email"
+              />
+            </div>
 
-          <Button type="submit" className="w-full" size="lg" disabled={submitting}>
-            {submitting ? "Giriş yapılıyor..." : "Giriş Yap"}
-          </Button>
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1.5">Şifre</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all"
+                autoComplete="current-password"
+              />
+            </div>
 
-          <p className="text-center text-sm text-white/40">
-            Hesabınız yok mu?{" "}
-            <Link href="/register" className="text-accent hover:text-accent/80 transition-colors font-medium">
-              Kayıt Ol
-            </Link>
-          </p>
-        </form>
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm text-white/50">
+                <input type="checkbox" defaultChecked className="rounded border-white/20 bg-white/5" />
+                Beni Hatırla
+              </label>
+              <button
+                type="button"
+                onClick={() => setMode("forgot")}
+                className="text-sm text-accent hover:text-accent/80 transition-colors"
+              >
+                Şifremi Unuttum
+              </button>
+            </div>
+
+            <Button type="submit" className="w-full" size="lg" disabled={submitting}>
+              {submitting ? "Giriş yapılıyor..." : "Giriş Yap"}
+            </Button>
+
+            <p className="text-center text-sm text-white/40">
+              Hesabınız yok mu?{" "}
+              <Link href="/register" className="text-accent hover:text-accent/80 transition-colors font-medium">
+                Kayıt Ol
+              </Link>
+            </p>
+          </form>
+        )}
 
         <div className="mt-4 text-center">
           <Link href="/" className="text-sm text-white/30 hover:text-white/50 transition-colors">

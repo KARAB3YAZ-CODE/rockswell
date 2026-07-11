@@ -11,14 +11,14 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useProduct, useProducts, useDiscountRate } from "@/hooks/use-data"
-import { useCartStore } from "@/lib/store"
+import { useCartStore, useCompareStore } from "@/lib/store"
 import { dealerPriceDisplay, TAX_RATE } from "@/lib/pricing"
 import { formatPrice } from "@/lib/utils"
 import {
   Package, ChevronLeft, Share2, ShoppingCart,
   Truck, Shield, Clock, FileText, Download,
   CheckCircle, AlertTriangle, Minus, Plus, Star,
-  Building2,
+  Building2, GitCompare,
 } from "lucide-react"
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -27,6 +27,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const { products } = useProducts()
   const { discountRate: companyRate } = useDiscountRate()
   const addItem = useCartStore((s) => s.addItem)
+  const compareItems = useCompareStore((s) => s.items)
+  const addCompare = useCompareStore((s) => s.addItem)
+  const removeCompare = useCompareStore((s) => s.removeItem)
   const [quantity, setQuantity] = useState(1)
   const [selectedImage, setSelectedImage] = useState(0)
   const [activeTab, setActiveTab] = useState<"info" | "specs" | "vehicles" | "docs">("info")
@@ -54,7 +57,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   const totalStock = product.stock.reduce((acc, s) => acc + s.available, 0)
   const isInStock = totalStock > 0
-  const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(product.basePrice, companyRate)
+  const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(
+    product.basePrice,
+    companyRate,
+    product.customerPriceApplied
+  )
   const kdvAmount = dealerPrice * TAX_RATE
 
   const relatedProducts = products
@@ -93,6 +100,25 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 {product.isFeatured && <Badge variant="premium"><Star size={10} /> Öne Çıkan</Badge>}
               </div>
               <div className="absolute top-4 right-4 flex gap-2">
+                <button
+                  onClick={() => {
+                    if (compareItems.includes(product.id)) {
+                      removeCompare(product.id)
+                      toast.success("Karşılaştırmadan çıkarıldı")
+                    } else if (compareItems.length >= 4) {
+                      toast.error("En fazla 4 ürün karşılaştırabilirsiniz")
+                    } else {
+                      addCompare(product.id)
+                      toast.success("Karşılaştırmaya eklendi")
+                    }
+                  }}
+                  className={`w-9 h-9 rounded-xl bg-black/60 backdrop-blur-sm flex items-center justify-center transition-colors ${
+                    compareItems.includes(product.id) ? "text-accent" : "text-white/50 hover:text-white"
+                  }`}
+                  title="Karşılaştır"
+                >
+                  <GitCompare size={16} />
+                </button>
                 <button onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link kopyalandı") }} className="w-9 h-9 rounded-xl bg-black/60 backdrop-blur-sm flex items-center justify-center text-white/50 hover:text-white transition-colors">
                   <Share2 size={16} />
                 </button>
@@ -202,6 +228,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       totalPrice: product.basePrice * quantity,
                       warehouseId: product.stock[0]?.warehouseId || "",
                       minOrderQuantity: product.minOrderQuantity,
+                      priceLocked: product.customerPriceApplied,
+                      category: product.category,
+                      vehicleBrands: product.compatibleVehicles.map((v) => v.brand),
                     })
                     toast.success(`${product.name} sepete eklendi`)
                   }}
@@ -211,7 +240,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 </Button>
               </div>
               <p className="text-xs text-white/40">
-                Sepette firma iskontonuz (%{discountRate}) uygulanır. Bayi birim: {formatPrice(dealerPrice)}
+                {product.customerPriceApplied
+                  ? "Özel müşteri fiyatınız uygulanmıştır."
+                  : `Sepette firma iskontonuz (%${discountRate}) uygulanır. Bayi birim: ${formatPrice(dealerPrice)}`}
               </p>
             </div>
 

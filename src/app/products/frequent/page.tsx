@@ -82,7 +82,11 @@ export default function FrequentPage() {
           )}>
             {paginated.map((product, i) => {
               const totalStock = product.stock.reduce((acc, s) => acc + s.available, 0)
-              const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(product.basePrice, companyRate)
+              const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(
+                product.basePrice,
+                companyRate,
+                product.customerPriceApplied
+              )
               return (
                 <motion.div
                   key={product.id}
@@ -116,7 +120,7 @@ export default function FrequentPage() {
                             {totalStock >= 10 ? "Stokta" : "Sınırlı Stok"} ({totalStock})
                           </p>
                         </div>
-                        <Button size="sm" onClick={(e) => { e.preventDefault(); addItem({ productId: product.id, productName: product.name, sku: product.sku, brand: product.brand, image: product.images[0] || "", quantity: product.minOrderQuantity, unitPrice: product.basePrice, totalPrice: product.basePrice * product.minOrderQuantity, warehouseId: product.stock[0]?.warehouseId || "", minOrderQuantity: product.minOrderQuantity }); toast.success(`${product.name} sepete eklendi`) }} icon={<Plus size={14} />} />
+                        <Button size="sm" onClick={(e) => { e.preventDefault(); addItem({ productId: product.id, productName: product.name, sku: product.sku, brand: product.brand, image: product.images[0] || "", quantity: product.minOrderQuantity, unitPrice: product.basePrice, totalPrice: product.basePrice * product.minOrderQuantity, warehouseId: product.stock[0]?.warehouseId || "", minOrderQuantity: product.minOrderQuantity, priceLocked: product.customerPriceApplied, category: product.category, vehicleBrands: product.compatibleVehicles.map((v) => v.brand) }); toast.success(`${product.name} sepete eklendi`) }} icon={<Plus size={14} />} />
                       </div>
                     </Link>
                   ) : (
@@ -157,7 +161,7 @@ export default function FrequentPage() {
                               </div>
                               <p className="text-[11px] text-white/30 line-through">{formatPrice(listPrice)}</p>
                             </div>
-                            <Button size="sm" variant="secondary" onClick={(e) => { e.preventDefault(); addItem({ productId: product.id, productName: product.name, sku: product.sku, brand: product.brand, image: product.images[0] || "", quantity: product.minOrderQuantity, unitPrice: product.basePrice, totalPrice: product.basePrice * product.minOrderQuantity, warehouseId: product.stock[0]?.warehouseId || "", minOrderQuantity: product.minOrderQuantity }); toast.success(`${product.name} sepete eklendi`) }} icon={<Plus size={14} />} />
+                            <Button size="sm" variant="secondary" onClick={(e) => { e.preventDefault(); addItem({ productId: product.id, productName: product.name, sku: product.sku, brand: product.brand, image: product.images[0] || "", quantity: product.minOrderQuantity, unitPrice: product.basePrice, totalPrice: product.basePrice * product.minOrderQuantity, warehouseId: product.stock[0]?.warehouseId || "", minOrderQuantity: product.minOrderQuantity, priceLocked: product.customerPriceApplied, category: product.category, vehicleBrands: product.compatibleVehicles.map((v) => v.brand) }); toast.success(`${product.name} sepete eklendi`) }} icon={<Plus size={14} />} />
                           </div>
                         </div>
                       </Card>

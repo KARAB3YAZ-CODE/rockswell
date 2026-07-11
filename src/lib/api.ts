@@ -10,7 +10,7 @@ import {
   mapUser,
   mapWarehouse,
 } from "./mappers"
-import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricing } from "./pricing"
+import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricingFromLines } from "./pricing"
 import { createInvoiceForOrder } from "./invoices"
 import type {
   Product, Order, Company, User, Warehouse,
@@ -248,6 +248,37 @@ export async function changePassword(newPassword: string): Promise<void> {
   if (error) err(error.message)
 }
 
+export async function requestPasswordReset(email: string): Promise<void> {
+  const trimmed = email.trim()
+  if (!trimmed) err("E-posta gerekli")
+  const redirectTo =
+    typeof window !== "undefined" ? `${window.location.origin}/login` : undefined
+  const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+    redirectTo,
+  })
+  if (error) err(error.message)
+}
+
+export async function createSupportTicket(input: {
+  subject: string
+  category: string
+  message: string
+}): Promise<void> {
+  const user = await getCurrentUser()
+  const subject = input.subject.trim()
+  const message = input.message.trim()
+  if (!subject || !message) err("Konu ve mesaj gerekli")
+  const { error } = await supabase.from("support_tickets").insert({
+    user_id: user.id,
+    company_id: user.companyId || null,
+    subject,
+    category: input.category || "genel",
+    message,
+    status: "open",
+  })
+  if (error) err(error.message)
+}
+
 // ─── Products ───────────────────────────────────────────────────────────────
 
 /**
@@ -272,7 +303,9 @@ async function applyCustomerPrices(products: Product[]): Promise<Product[]> {
     const cp = map.get(p.id)
     if (!cp) return p
     const price = cp.net_price ?? cp.campaign_price ?? cp.dealer_price
-    return price != null ? { ...p, basePrice: Number(price) } : p
+    return price != null
+      ? { ...p, basePrice: Number(price), customerPriceApplied: true }
+      : p
   })
 }
 
@@ -527,6 +560,30 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   if (!input.items.length) err("Sepetiniz boş.")
 
   const discountRate = await getCustomerDiscountRate()
+  const productIds = [...new Set(input.items.map((i) => i.productId))]
+  const [{ data: productRows }, { data: priceRows }, campaigns] = await Promise.all([
+    supabase.from("products").select("id, category, brand, compatible_vehicles").in("id", productIds),
+    supabase
+      .from("customer_prices")
+      .select("product_id")
+      .eq("customer_id", user.id)
+      .in("product_id", productIds),
+    getCampaigns().catch(() => [] as Campaign[]),
+  ])
+
+  const productMap = new Map(
+    (productRows ?? []).map((row) => [
+      String(row.id),
+      {
+        category: String(row.category ?? ""),
+        brand: String(row.brand ?? ""),
+        vehicleBrands: ((row.compatible_vehicles as { brand?: string }[]) ?? [])
+          .map((v) => String(v.brand ?? ""))
+          .filter(Boolean),
+      },
+    ])
+  )
+  const lockedIds = new Set((priceRows ?? []).map((r) => String(r.product_id)))
 
   const orderItems: Order["items"] = input.items.map((item) => ({
     productId: item.productId,
@@ -535,14 +592,24 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     brand: item.brand,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
-    discountRate,
+    discountRate: lockedIds.has(item.productId) ? 0 : discountRate,
     totalPrice: item.unitPrice * item.quantity,
     warehouseId: item.warehouseId,
     stockLocation: "",
   }))
 
-  const subtotal = orderItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
-  const pricing = toOrderPricing(subtotal, discountRate, input.paymentMethod)
+  const pricingLines = input.items.map((item) => {
+    const meta = productMap.get(item.productId)
+    return {
+      unitPrice: item.unitPrice,
+      quantity: item.quantity,
+      priceLocked: lockedIds.has(item.productId),
+      category: meta?.category,
+      brand: meta?.brand ?? item.brand,
+      vehicleBrands: meta?.vehicleBrands,
+    }
+  })
+  const pricing = toOrderPricingFromLines(pricingLines, discountRate, input.paymentMethod, campaigns)
 
   const isOnline = input.paymentMethod === "online"
   const status: Order["status"] = input.asQuotation
@@ -588,7 +655,8 @@ export async function updateOrderStatus(
   id: string,
   status: Order["status"]
 ): Promise<Order> {
-  await requireAuth()
+  const user = await getCurrentUser()
+  if (user.role !== "admin") err("Sipariş durumunu yalnızca yönetici değiştirebilir")
   const { data, error } = await supabase
     .from("orders")
     .update({ status })
@@ -1164,6 +1232,36 @@ export async function getAllInvoices(): Promise<(Invoice & { companyName?: strin
     ...mapInvoice(row),
     companyName: (row.companies as { name?: string } | null)?.name ?? "—",
   }))
+}
+
+export async function updateInvoiceStatus(
+  id: string,
+  status: Invoice["status"]
+): Promise<Invoice> {
+  const user = await getCurrentUser()
+  if (user.role !== "admin") err("Fatura durumunu yalnızca yönetici değiştirebilir")
+  const patch: Record<string, unknown> = { status }
+  if (status === "paid") patch.paid_date = new Date().toISOString()
+  const { data, error } = await supabase
+    .from("invoices")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Fatura güncellenemedi")
+  return mapInvoice(data)
+}
+
+/** Mark all invoices for an order as paid (PayTR / admin). */
+export async function markOrderInvoicesPaid(
+  service: { from: typeof supabase.from },
+  orderId: string
+): Promise<void> {
+  await service
+    .from("invoices")
+    .update({ status: "paid", paid_date: new Date().toISOString() })
+    .eq("order_id", orderId)
+    .neq("status", "cancelled")
 }
 
 export interface AdminReportSummary {

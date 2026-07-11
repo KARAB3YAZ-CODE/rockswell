@@ -2,14 +2,16 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
+import toast from "react-hot-toast"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
-import { getAllInvoices } from "@/lib/api"
+import { getAllInvoices, updateInvoiceStatus } from "@/lib/api"
 import { siteAbsoluteUrl, adminPath } from "@/lib/admin-host"
 import { formatPrice, formatDate, cn } from "@/lib/utils"
 import { SectionHeader, inputCls } from "@/components/admin/ui"
-import { FileText, Search, ShoppingBag } from "lucide-react"
+import { FileText, Search, ShoppingBag, CheckCircle2 } from "lucide-react"
 
 const statusLabels: Record<string, string> = {
   draft: "Taslak",
@@ -36,10 +38,24 @@ const DATE_PRESETS = [
 ] as const
 
 export default function AdminInvoicesPage() {
-  const { data: invoices, loading } = useData(() => getAllInvoices(), [])
+  const { data: invoices, loading, refetch } = useData(() => getAllInvoices(), [])
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState<string>("all")
   const [datePreset, setDatePreset] = useState<(typeof DATE_PRESETS)[number]["id"]>("all")
+  const [markingId, setMarkingId] = useState<string | null>(null)
+
+  const markPaid = async (id: string) => {
+    setMarkingId(id)
+    try {
+      await updateInvoiceStatus(id, "paid")
+      toast.success("Fatura ödendi olarak işaretlendi")
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Güncellenemedi")
+    } finally {
+      setMarkingId(null)
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -145,6 +161,7 @@ export default function AdminInvoicesPage() {
                   <th className="text-left text-xs font-medium text-white/30 p-3">Durum</th>
                   <th className="text-left text-xs font-medium text-white/30 p-3">Tarih</th>
                   <th className="text-right text-xs font-medium text-white/30 p-3">Tutar</th>
+                  <th className="text-right text-xs font-medium text-white/30 p-3">İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -166,6 +183,21 @@ export default function AdminInvoicesPage() {
                     </td>
                     <td className="p-3 text-sm text-white/50">{formatDate(inv.createdAt)}</td>
                     <td className="p-3 text-right text-sm font-medium text-white">{formatPrice(inv.grandTotal)}</td>
+                    <td className="p-3 text-right">
+                      {inv.status !== "paid" && inv.status !== "cancelled" ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={markingId === inv.id}
+                          onClick={() => markPaid(inv.id)}
+                          icon={<CheckCircle2 size={12} />}
+                        >
+                          {markingId === inv.id ? "…" : "Ödendi"}
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-white/20">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

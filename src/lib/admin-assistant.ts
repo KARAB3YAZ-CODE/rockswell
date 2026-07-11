@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { createInvoiceForOrder } from "@/lib/invoices"
 
 type ToolResult = { ok: true; data: unknown } | { ok: false; error: string }
 
@@ -580,8 +581,20 @@ async function approvePendingOrders(
 
   let updated = 0
   for (const o of orders) {
-    const { error: upErr } = await service.from("orders").update({ status: "confirmed" }).eq("id", o.id)
-    if (!upErr) updated += 1
+    const { data: row, error: upErr } = await service
+      .from("orders")
+      .update({ status: "confirmed" })
+      .eq("id", o.id)
+      .select("id, order_number, company_id, items, pricing")
+      .single()
+    if (!upErr && row) {
+      updated += 1
+      try {
+        await createInvoiceForOrder(service, row)
+      } catch {
+        /* best-effort */
+      }
+    }
   }
   return { ok: true, data: { dryRun: false, updated, count: orders.length } }
 }

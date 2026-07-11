@@ -16,6 +16,10 @@ interface CartItem {
   warehouseId: string
   minOrderQuantity: number
   maxOrderQuantity?: number
+  /** customer_prices net — skip company discount at checkout */
+  priceLocked?: boolean
+  category?: string
+  vehicleBrands?: string[]
 }
 
 interface CartStore {

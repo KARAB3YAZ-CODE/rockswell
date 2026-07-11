@@ -61,6 +61,8 @@ export interface Product {
   isActive: boolean
   isFeatured: boolean
   tags: string[]
+  /** true when customer_prices overrode basePrice with a net/dealer price */
+  customerPriceApplied?: boolean
   createdAt: Date
   updatedAt: Date
 }
