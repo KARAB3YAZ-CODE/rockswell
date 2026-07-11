@@ -371,21 +371,21 @@ export default function CustomerHomePage() {
           </GlassCard>
         </div>
 
-        {/* Admin-managed promo banners — fixed card size; images never stretch the layout */}
+        {/* Admin-managed promo banners — fixed height so title/CTA never clip */}
         {promoBanners.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
             {promoBanners.map((b, i) => (
               <Link
                 key={b.id}
                 href={b.href || "/products"}
-                className="block w-full min-w-0 max-w-full overflow-hidden rounded-2xl"
+                className="block w-full min-w-0 max-w-full"
               >
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                   className={cn(
-                    "relative w-full max-w-full aspect-[16/9] max-h-[180px] overflow-hidden rounded-2xl border border-border bg-gradient-to-br hover:border-accent/30 transition-colors group isolate",
+                    "relative w-full h-[148px] sm:h-[160px] overflow-hidden rounded-2xl border border-border bg-gradient-to-br hover:border-accent/30 transition-colors group isolate",
                     b.gradient
                   )}
                   style={{ backgroundColor: "var(--card)" }}
@@ -395,20 +395,22 @@ export default function CustomerHomePage() {
                     <img
                       src={b.imageUrl}
                       alt=""
-                      className="absolute inset-0 !max-w-none w-full h-full object-cover object-center pointer-events-none select-none"
+                      className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
                       draggable={false}
                     />
                   ) : null}
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/60 to-black/35" />
-                  <div className="relative z-10 h-full flex flex-col justify-end p-4 min-w-0">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/55 to-black/25" />
+                  <div className="relative z-10 h-full flex flex-col justify-end gap-1.5 p-4 min-w-0">
                     {b.badge && (
-                      <Badge variant="premium" size="sm" className="mb-2 w-fit">{b.badge}</Badge>
+                      <Badge variant="premium" size="sm" className="w-fit shrink-0">{b.badge}</Badge>
                     )}
-                    <p className="text-sm font-bold text-white group-hover:text-accent transition-colors line-clamp-1">
+                    <p className="text-sm font-bold text-white leading-snug group-hover:text-accent transition-colors line-clamp-1">
                       {b.title}
                     </p>
-                    <p className="text-xs text-white/45 mt-1 line-clamp-2">{b.subtitle}</p>
-                    <span className="inline-flex items-center gap-1 text-[11px] text-accent mt-2">
+                    {b.subtitle ? (
+                      <p className="text-xs text-white/45 leading-snug line-clamp-1">{b.subtitle}</p>
+                    ) : null}
+                    <span className="inline-flex items-center gap-1 text-[11px] text-accent shrink-0">
                       {b.cta || "İncele"} <ArrowRight size={12} />
                     </span>
                   </div>
