@@ -193,10 +193,10 @@ export function AdminProducts() {
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-[220px_1fr] gap-4">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
         {/* Side groups */}
         {browse !== "all" && (
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden h-fit max-h-[70vh] flex flex-col">
+          <div className="w-full lg:w-[220px] shrink-0 rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden h-fit max-h-[70vh] flex flex-col">
             <div className="px-3 py-2.5 border-b border-white/5 text-xs text-white/40 font-medium flex items-center gap-1.5">
               <Filter size={12} />
               {browse === "category" ? "Kategoriler" : "Markalar"}
@@ -230,7 +230,7 @@ export function AdminProducts() {
           </div>
         )}
 
-        <div className="space-y-3 min-w-0">
+        <div className="space-y-3 min-w-0 flex-1 w-full">
           {/* Toolbar */}
           <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 space-y-3">
             <div className="flex flex-col sm:flex-row gap-2">
