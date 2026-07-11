@@ -10,7 +10,7 @@ import {
   mapUser,
   mapWarehouse,
 } from "./mappers"
-import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricingFromLines } from "./pricing"
+import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricingFromLines, type VolumeDiscountTier } from "./pricing"
 import { createInvoiceForOrder } from "./invoices"
 import { applyStockMovement, assertStockAvailable, orderItemsToStockLines, syncWarehouseUsedCapacity } from "./inventory"
 import { assertCreditAllowsOrder, getCompanyCreditSnapshot } from "./credit"
@@ -729,7 +729,7 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
 
   const discountRate = await getCustomerDiscountRate()
   const productIds = [...new Set(input.items.map((i) => i.productId))]
-  const [{ data: productRows }, { data: priceRows }, campaigns] = await Promise.all([
+  const [{ data: productRows }, { data: priceRows }, campaigns, siteSettings] = await Promise.all([
     supabase
       .from("products")
       .select("id, category, brand, compatible_vehicles, stock, name")
@@ -742,6 +742,7 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
           .in("product_id", productIds)
       : Promise.resolve({ data: [] as { product_id: string }[] }),
     getCampaigns().catch(() => [] as Campaign[]),
+    getSiteSettings().catch(() => null),
   ])
 
   const productMap = new Map(
@@ -793,7 +794,13 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
       vehicleBrands: meta?.vehicleBrands,
     }
   })
-  const pricing = toOrderPricingFromLines(pricingLines, discountRate, input.paymentMethod, campaigns)
+  const pricing = toOrderPricingFromLines(
+    pricingLines,
+    discountRate,
+    input.paymentMethod,
+    campaigns,
+    siteSettings?.volumeDiscountTiers
+  )
 
   const isOnline = input.paymentMethod === "online"
   // Open-account (havale) consumes credit; quotations and online card do not.
@@ -2543,6 +2550,8 @@ export interface SiteSettings {
   priceUpdateEnabled: boolean
   priceUpdateDate: string | null
   priceUpdateMessage: string
+  /** Sipariş tutarına göre ekstra iskonto kademeleri */
+  volumeDiscountTiers: VolumeDiscountTier[]
   updatedAt: string | null
 }
 
@@ -2552,17 +2561,37 @@ const defaultSiteSettings: SiteSettings = {
   priceUpdateEnabled: false,
   priceUpdateDate: null,
   priceUpdateMessage: "",
+  volumeDiscountTiers: [
+    { threshold: 50_000, bonusPercent: 5 },
+    { threshold: 150_000, bonusPercent: 10 },
+  ],
   updatedAt: null,
 }
 
+function mapVolumeTiers(raw: unknown): SiteSettings["volumeDiscountTiers"] {
+  if (!Array.isArray(raw)) return [...defaultSiteSettings.volumeDiscountTiers]
+  const mapped = raw
+    .map((row) => {
+      const r = row as Record<string, unknown>
+      return {
+        threshold: Number(r.threshold ?? 0),
+        bonusPercent: Number(r.bonusPercent ?? r.bonus_percent ?? 0),
+      }
+    })
+    .filter((t) => t.threshold > 0 && t.bonusPercent > 0)
+    .sort((a, b) => a.threshold - b.threshold)
+  return mapped.length ? mapped : [...defaultSiteSettings.volumeDiscountTiers]
+}
+
 function mapSiteSettings(row: Record<string, unknown> | null): SiteSettings {
-  if (!row) return { ...defaultSiteSettings }
+  if (!row) return { ...defaultSiteSettings, volumeDiscountTiers: [...defaultSiteSettings.volumeDiscountTiers] }
   return {
     maintenanceEnabled: Boolean(row.maintenance_enabled),
     maintenanceMessage: String(row.maintenance_message ?? defaultSiteSettings.maintenanceMessage),
     priceUpdateEnabled: Boolean(row.price_update_enabled),
     priceUpdateDate: row.price_update_date ? String(row.price_update_date).slice(0, 10) : null,
     priceUpdateMessage: String(row.price_update_message ?? ""),
+    volumeDiscountTiers: mapVolumeTiers(row.volume_discount_tiers),
     updatedAt: row.updated_at ? String(row.updated_at) : null,
   }
 }
@@ -2587,6 +2616,15 @@ export async function updateSiteSettings(input: Partial<SiteSettings>): Promise<
   if (input.priceUpdateEnabled !== undefined) patch.price_update_enabled = input.priceUpdateEnabled
   if (input.priceUpdateDate !== undefined) patch.price_update_date = input.priceUpdateDate || null
   if (input.priceUpdateMessage !== undefined) patch.price_update_message = input.priceUpdateMessage
+  if (input.volumeDiscountTiers !== undefined) {
+    patch.volume_discount_tiers = input.volumeDiscountTiers
+      .map((t) => ({
+        threshold: Math.max(0, Number(t.threshold) || 0),
+        bonusPercent: Math.min(100, Math.max(0, Number(t.bonusPercent) || 0)),
+      }))
+      .filter((t) => t.threshold > 0 && t.bonusPercent > 0)
+      .sort((a, b) => a.threshold - b.threshold)
+  }
 
   const { data, error } = await supabase
     .from("site_settings")

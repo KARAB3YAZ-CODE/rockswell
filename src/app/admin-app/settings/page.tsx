@@ -13,10 +13,11 @@ import {
   TAX_RATE,
   SHIPPING_COST,
   FREE_SHIPPING_THRESHOLD,
+  type VolumeDiscountTier,
 } from "@/lib/pricing"
 import { ADMIN_URL, SITE_URL } from "@/lib/admin-host"
 import { formatPrice } from "@/lib/utils"
-import { Settings, Wrench, Tag } from "lucide-react"
+import { Settings, Wrench, Tag, Plus, Trash2, Unlock } from "lucide-react"
 
 export default function AdminSettingsPage() {
   const { data, loading, refetch } = useData(() => getSiteSettings(), [])
@@ -37,6 +38,11 @@ export default function AdminSettingsPage() {
     { label: "Admin URL", value: ADMIN_URL },
   ]
 
+  const updateTier = (tiers: VolumeDiscountTier[]) => {
+    if (!form) return
+    setForm({ ...form, volumeDiscountTiers: tiers })
+  }
+
   const save = async () => {
     if (!form) return
     setSaving(true)
@@ -47,6 +53,7 @@ export default function AdminSettingsPage() {
         priceUpdateEnabled: form.priceUpdateEnabled,
         priceUpdateDate: form.priceUpdateDate,
         priceUpdateMessage: form.priceUpdateMessage,
+        volumeDiscountTiers: form.volumeDiscountTiers,
       })
       setForm(next)
       refetch()
@@ -64,7 +71,7 @@ export default function AdminSettingsPage() {
         icon={Settings}
         tone="warning"
         title="Sistem Ayarları"
-        subtitle="Bakım modu, fiyat güncelleme bildirimi ve platform sabitleri"
+        subtitle="Bakım modu, fiyat güncelleme, hacim iskonto kademeleri"
       />
 
       <GlassCard intensity="light" className="p-5 space-y-4">
@@ -134,6 +141,85 @@ export default function AdminSettingsPage() {
         )}
       </GlassCard>
 
+      <GlassCard intensity="light" className="p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Unlock size={16} className="text-accent" />
+            <h3 className="text-sm font-semibold text-white">Hacim İskonto Kademeleri</h3>
+          </div>
+          {form && (
+            <button
+              type="button"
+              onClick={() =>
+                updateTier([
+                  ...form.volumeDiscountTiers,
+                  {
+                    threshold: (form.volumeDiscountTiers.at(-1)?.threshold ?? 0) + 50_000,
+                    bonusPercent: (form.volumeDiscountTiers.at(-1)?.bonusPercent ?? 0) + 5,
+                  },
+                ])
+              }
+              className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80"
+            >
+              <Plus size={12} /> Kademe ekle
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-white/40">
+          Firma iskontosunun üzerine, sipariş ara toplamı eşiğe ulaşınca ekstra iskonto açılır.
+          Örn: %25 firma + 50.000 TL’de +%5 → efektif %30.
+        </p>
+        {loading || !form ? (
+          <p className="text-sm text-white/40">Yükleniyor…</p>
+        ) : form.volumeDiscountTiers.length === 0 ? (
+          <p className="text-sm text-white/40">Kademe yok — ekleyin veya kaydedince varsayılanlar gelir.</p>
+        ) : (
+          <div className="space-y-2">
+            {form.volumeDiscountTiers.map((tier, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                <Field label="Eşik (TL)">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1000}
+                    value={tier.threshold}
+                    onChange={(e) => {
+                      const next = [...form.volumeDiscountTiers]
+                      next[i] = { ...next[i], threshold: Number(e.target.value) || 0 }
+                      updateTier(next)
+                    }}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Ekstra iskonto (%)">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={tier.bonusPercent}
+                    onChange={(e) => {
+                      const next = [...form.volumeDiscountTiers]
+                      next[i] = { ...next[i], bonusPercent: Number(e.target.value) || 0 }
+                      updateTier(next)
+                    }}
+                    className={inputCls}
+                  />
+                </Field>
+                <button
+                  type="button"
+                  onClick={() => updateTier(form.volumeDiscountTiers.filter((_, j) => j !== i))}
+                  className="h-10 w-10 mb-0.5 rounded-xl flex items-center justify-center text-white/30 hover:text-danger hover:bg-danger/5"
+                  aria-label="Kademeyi sil"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
+
       {form && (
         <Button onClick={save} disabled={saving} className="w-full sm:w-auto">
           {saving ? "Kaydediliyor…" : "Ayarları Kaydet"}
@@ -151,7 +237,7 @@ export default function AdminSettingsPage() {
       </GlassCard>
 
       <p className="text-xs text-white/35">
-        Firma bazlı iskonto ve kredi limiti için Şirketler sayfasını kullanın. Global sabitler kod/env üzerinden yönetilir.
+        Firma bazlı iskonto ve kredi limiti için Şirketler sayfasını kullanın. Hacim kademeleri tüm firmalara uygulanır.
       </p>
     </div>
   )

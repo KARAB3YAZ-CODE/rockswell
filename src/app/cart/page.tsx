@@ -17,7 +17,7 @@ import {
   HAVALE_EXTRA_DISCOUNT_RATE,
   TAX_RATE,
 } from "@/lib/pricing"
-import { createOrder, getCampaigns, getCustomerDiscountRate, getMyCreditSnapshot, getProducts, type PaymentMethod } from "@/lib/api"
+import { createOrder, getCampaigns, getCustomerDiscountRate, getMyCreditSnapshot, getProducts, getSiteSettings, type PaymentMethod } from "@/lib/api"
 import { allocateWarehouses } from "@/lib/warehouse-alloc"
 import type { StockInfo } from "@/lib/types"
 import { cartLineKey } from "@/lib/cart-item"
@@ -27,7 +27,7 @@ import { useData } from "@/hooks/use-data"
 import {
   ShoppingCart, Trash2, Plus, Minus, Package,
   CreditCard, Truck, Building2, CheckCircle2,
-  FileText, ShoppingBag, AlertCircle, Tag,
+  FileText, ShoppingBag, AlertCircle, Tag, Lock, Unlock,
 } from "lucide-react"
 
 export default function CartPage() {
@@ -50,8 +50,13 @@ export default function CartPage() {
     () => (isAuthenticated ? getMyCreditSnapshot() : Promise.resolve(null)),
     [isAuthenticated]
   )
+  const { data: siteSettings } = useData(
+    () => (isAuthenticated ? getSiteSettings().catch(() => null) : Promise.resolve(null)),
+    [isAuthenticated]
+  )
 
   const discountRate = fetchedRate ?? DEFAULT_DISCOUNT_RATE
+  const volumeTiers = siteSettings?.volumeDiscountTiers
   const pricingLines = items.map((i) => ({
     unitPrice: i.unitPrice,
     quantity: i.quantity,
@@ -63,6 +68,10 @@ export default function CartPage() {
   const {
     subtotal,
     discount,
+    volumeDiscount,
+    volumeBonusPercent,
+    effectiveDiscountRate,
+    volumeTier,
     campaignDiscount,
     campaignName,
     paymentDiscount,
@@ -70,7 +79,13 @@ export default function CartPage() {
     tax,
     total,
     paymentDiscountRate,
-  } = computeCartPricingFromLines(pricingLines, discountRate, paymentMethod, campaigns ?? [])
+  } = computeCartPricingFromLines(
+    pricingLines,
+    discountRate,
+    paymentMethod,
+    campaigns ?? [],
+    volumeTiers
+  )
 
   const havaleCreditBlocked =
     paymentMethod === "havale" &&
@@ -203,9 +218,75 @@ export default function CartPage() {
               <div className="flex items-center gap-2 text-xs text-accent bg-accent/5 px-3 py-2 rounded-lg">
                 <AlertCircle size={14} />
                 %{discountRate} Bayi İndirimi
+                {volumeBonusPercent > 0 ? ` + %${volumeBonusPercent} Hacim` : ""}
                 {paymentMethod === "havale" ? ` + %${HAVALE_EXTRA_DISCOUNT_RATE} Havale/EFT İndirimi` : ""}
-                {campaignDiscount > 0 && campaignName ? ` + kampanya` : ""} uygulanmaktadır
+                {campaignDiscount > 0 && campaignName ? ` + kampanya` : ""}
+                {" "}· efektif %{effectiveDiscountRate}
               </div>
+
+              {/* Volume unlock ladder */}
+              {volumeTier.tiers.length > 0 && (
+                <GlassCard intensity="light" className="p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-white">Hacim İskonto Kilitleri</p>
+                    <span className="text-[11px] text-white/40">
+                      {volumeBonusPercent > 0
+                        ? `Açık: +%${volumeBonusPercent}`
+                        : "Henüz kilit açılmadı"}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {volumeTier.tiers.map((tier) => {
+                      const unlocked = subtotal >= tier.threshold
+                      return (
+                        <div
+                          key={tier.threshold}
+                          className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                            unlocked
+                              ? "border-accent/30 bg-accent/5"
+                              : "border-white/10 bg-white/[0.02]"
+                          }`}
+                        >
+                          <div
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              unlocked ? "bg-accent/15 text-accent" : "bg-white/5 text-white/30"
+                            }`}
+                          >
+                            {unlocked ? <Unlock size={14} /> : <Lock size={14} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-medium ${unlocked ? "text-white" : "text-white/50"}`}>
+                              +%{tier.bonusPercent} ekstra iskonto
+                            </p>
+                            <p className="text-[11px] text-white/35">
+                              {formatPrice(tier.threshold)} ve üzeri siparişte
+                            </p>
+                          </div>
+                          <span className={`text-[11px] font-medium ${unlocked ? "text-accent" : "text-white/30"}`}>
+                            {unlocked ? "Açık" : "Kilitli"}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {volumeTier.nextThreshold != null && (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex justify-between text-[11px] text-white/40">
+                        <span>
+                          Sonraki kilit: +%{volumeTier.nextBonusPercent} ({formatPrice(volumeTier.nextThreshold)})
+                        </span>
+                        <span>{formatPrice(volumeTier.amountToNext)} kaldı</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-accent transition-all"
+                          style={{ width: `${Math.round(volumeTier.progress * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </GlassCard>
+              )}
 
               {items.map((item) => (
                 <motion.div
@@ -352,6 +433,15 @@ export default function CartPage() {
                     <div className="flex justify-between text-sm">
                       <span className="text-white/40">Bayi İndirimi (%{discountRate})</span>
                       <span className="text-success">-{formatPrice(discount)}</span>
+                    </div>
+                  )}
+                  {volumeDiscount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-white/40 flex items-center gap-1">
+                        <Unlock size={12} />
+                        Hacim İskontosu (+%{volumeBonusPercent})
+                      </span>
+                      <span className="text-success">-{formatPrice(volumeDiscount)}</span>
                     </div>
                   )}
                   {campaignDiscount > 0 && (
