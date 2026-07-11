@@ -1362,6 +1362,152 @@ export async function updateSiteSettings(input: Partial<SiteSettings>): Promise<
   return mapSiteSettings(data)
 }
 
+// ─── Home banners (firma ana sayfa) ─────────────────────────────────────────
+
+export type HomeBannerKind = "hero" | "promo"
+
+export interface HomeBanner {
+  id: string
+  kind: HomeBannerKind
+  title: string
+  subtitle: string
+  cta: string
+  href: string
+  badge: string
+  gradient: string
+  imageUrl: string
+  sortOrder: number
+  isActive: boolean
+}
+
+export interface HomeBannerInput {
+  kind: HomeBannerKind
+  title: string
+  subtitle: string
+  cta: string
+  href: string
+  badge: string
+  gradient: string
+  imageUrl?: string
+  isActive: boolean
+}
+
+function mapHomeBanner(row: Record<string, unknown>): HomeBanner {
+  return {
+    id: String(row.id),
+    kind: (row.kind === "promo" ? "promo" : "hero") as HomeBannerKind,
+    title: String(row.title ?? ""),
+    subtitle: String(row.subtitle ?? ""),
+    cta: String(row.cta ?? ""),
+    href: String(row.href ?? "/products"),
+    badge: String(row.badge ?? ""),
+    gradient: String(row.gradient ?? "from-accent/20 via-accent/5 to-transparent"),
+    imageUrl: String(row.image_url ?? ""),
+    sortOrder: Number(row.sort_order ?? 0),
+    isActive: Boolean(row.is_active),
+  }
+}
+
+/** Active banners for storefront (hero + promo). */
+export async function getHomeBanners(kind?: HomeBannerKind): Promise<HomeBanner[]> {
+  await requireAuth()
+  let query = supabase
+    .from("home_banners")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+  if (kind) query = query.eq("kind", kind)
+  const { data, error } = await query
+  if (error) err(error.message)
+  return (data ?? []).map(mapHomeBanner)
+}
+
+/** All banners for admin editor. */
+export async function getAllHomeBanners(): Promise<HomeBanner[]> {
+  await requireAuth()
+  const { data, error } = await supabase
+    .from("home_banners")
+    .select("*")
+    .order("kind", { ascending: true })
+    .order("sort_order", { ascending: true })
+  if (error) err(error.message)
+  return (data ?? []).map(mapHomeBanner)
+}
+
+export async function createHomeBanner(input: HomeBannerInput): Promise<HomeBanner> {
+  await requireAuth()
+  const { data: maxRow } = await supabase
+    .from("home_banners")
+    .select("sort_order")
+    .eq("kind", input.kind)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const sortOrder = Number(maxRow?.sort_order ?? -1) + 1
+
+  const { data, error } = await supabase
+    .from("home_banners")
+    .insert({
+      kind: input.kind,
+      title: input.title,
+      subtitle: input.subtitle,
+      cta: input.cta,
+      href: input.href,
+      badge: input.badge,
+      gradient: input.gradient,
+      image_url: input.imageUrl ?? "",
+      is_active: input.isActive,
+      sort_order: sortOrder,
+    })
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Banner oluşturulamadı")
+  return mapHomeBanner(data)
+}
+
+export async function updateHomeBanner(id: string, input: HomeBannerInput): Promise<HomeBanner> {
+  await requireAuth()
+  const { data, error } = await supabase
+    .from("home_banners")
+    .update({
+      kind: input.kind,
+      title: input.title,
+      subtitle: input.subtitle,
+      cta: input.cta,
+      href: input.href,
+      badge: input.badge,
+      gradient: input.gradient,
+      image_url: input.imageUrl ?? "",
+      is_active: input.isActive,
+    })
+    .eq("id", id)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Banner güncellenemedi")
+  return mapHomeBanner(data)
+}
+
+export async function deleteHomeBanner(id: string): Promise<void> {
+  await requireAuth()
+  const { error } = await supabase.from("home_banners").delete().eq("id", id)
+  if (error) err(error.message)
+}
+
+export async function reorderHomeBanners(kind: HomeBannerKind, orderedIds: string[]): Promise<void> {
+  await requireAuth()
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      supabase.from("home_banners").update({ sort_order: index }).eq("id", id).eq("kind", kind)
+    )
+  )
+}
+
+export async function setHomeBannerActive(id: string, isActive: boolean): Promise<void> {
+  await requireAuth()
+  const { error } = await supabase.from("home_banners").update({ is_active: isActive }).eq("id", id)
+  if (error) err(error.message)
+}
+
 // ─── Warehouses ─────────────────────────────────────────────────────────────
 
 export async function getWarehouses(): Promise<Warehouse[]> {

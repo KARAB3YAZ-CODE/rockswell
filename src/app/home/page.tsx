@@ -12,7 +12,7 @@ import { GlassCard } from "@/components/effects/glass-card"
 import { Glow } from "@/components/effects/glow"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useCampaigns, useProducts, useOrders, useData, useDiscountRate } from "@/hooks/use-data"
-import { getDashboardStats } from "@/lib/api"
+import { getDashboardStats, getHomeBanners } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { roleLabel } from "@/lib/roles"
 import { useCartStore } from "@/lib/store"
@@ -81,6 +81,7 @@ export default function CustomerHomePage() {
   const { orders, loading: ordersLoading } = useOrders()
   const { user, company } = useAuth()
   const { data: stats } = useData(() => getDashboardStats(), [])
+  const { data: homeBanners } = useData(() => getHomeBanners(), [])
   const { discountRate: companyDiscountRate } = useDiscountRate()
 
   const newProducts = useMemo(() => {
@@ -97,7 +98,28 @@ export default function CustomerHomePage() {
     return campaigns.filter((c) => c.isActive).slice(0, 3)
   }, [campaigns])
 
+  const heroBanners = useMemo(
+    () => (homeBanners ?? []).filter((b) => b.kind === "hero"),
+    [homeBanners]
+  )
+  const promoBanners = useMemo(
+    () => (homeBanners ?? []).filter((b) => b.kind === "promo").slice(0, 3),
+    [homeBanners]
+  )
+
   const slides = useMemo(() => {
+    if (heroBanners.length > 0) {
+      return heroBanners.map((b) => ({
+        title: b.title,
+        subtitle: b.subtitle,
+        cta: b.cta || "İncele",
+        href: b.href || "/products",
+        gradient: b.gradient,
+        badge: b.badge || "Banner",
+        imageUrl: b.imageUrl,
+        icon: Percent,
+      }))
+    }
     if (activeCampaigns.length > 0) {
       return activeCampaigns.map((campaign, i) => ({
         title: campaign.name,
@@ -106,11 +128,12 @@ export default function CustomerHomePage() {
         href: "/account/campaigns",
         gradient: i % 2 === 0 ? "from-accent/20 via-accent/5 to-transparent" : "from-info/20 via-info/5 to-transparent",
         badge: campaign.discountRate ? `%${campaign.discountRate}` : "Kampanya",
+        imageUrl: "",
         icon: Percent,
       }))
     }
-    return fallbackSlides
-  }, [activeCampaigns])
+    return fallbackSlides.map((s) => ({ ...s, imageUrl: "" }))
+  }, [heroBanners, activeCampaigns])
 
   const creditLimit = stats?.creditLimit ?? 0
   const creditUsed = stats?.creditUsed ?? stats?.currentBalance ?? 0
@@ -216,25 +239,32 @@ export default function CustomerHomePage() {
               transition={{ duration: 0.5, ease: "easeInOut" }}
               className={cn(
                 "absolute inset-0 bg-gradient-to-br p-8 lg:p-12 flex flex-col justify-center",
-                slides[currentSlide].gradient
+                slides[currentSlide]?.gradient
               )}
-              style={{ backgroundColor: "var(--card)" }}
+              style={{
+                backgroundColor: "var(--card)",
+                backgroundImage: slides[currentSlide]?.imageUrl
+                  ? `linear-gradient(to right, rgba(10,10,10,0.85), rgba(10,10,10,0.4)), url(${slides[currentSlide].imageUrl})`
+                  : undefined,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }}
             >
               <div className="flex items-center gap-3 mb-4">
                 <Badge variant="premium" className="w-fit">
-                  {slides[currentSlide].badge === "Hızlı" ? <Zap size={12} /> : slides[currentSlide].badge === "Sipariş" ? <ShoppingBag size={12} /> : <Percent size={12} />}
-                  {slides[currentSlide].badge}
+                  {slides[currentSlide]?.badge === "Hızlı" ? <Zap size={12} /> : slides[currentSlide]?.badge === "Sipariş" ? <ShoppingBag size={12} /> : <Percent size={12} />}
+                  {slides[currentSlide]?.badge}
                 </Badge>
               </div>
               <h2 className="text-2xl lg:text-4xl font-bold text-white max-w-xl leading-tight">
-                {slides[currentSlide].title}
+                {slides[currentSlide]?.title}
               </h2>
               <p className="mt-3 text-white/60 max-w-lg text-sm lg:text-base leading-relaxed">
-                {slides[currentSlide].subtitle}
+                {slides[currentSlide]?.subtitle}
               </p>
-              <Link href={slides[currentSlide].href}>
+              <Link href={slides[currentSlide]?.href || "/products"}>
                 <Button size="lg" className="mt-6 w-fit group/btn">
-                  <span>{slides[currentSlide].cta}</span>
+                  <span>{slides[currentSlide]?.cta}</span>
                   <ArrowRight size={16} className="group-hover/btn:translate-x-0.5 transition-transform" />
                 </Button>
               </Link>
@@ -322,6 +352,42 @@ export default function CustomerHomePage() {
             </div>
           </GlassCard>
         </div>
+
+        {/* Admin-managed promo banners */}
+        {promoBanners.length > 0 && (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {promoBanners.map((b, i) => (
+              <Link key={b.id} href={b.href || "/products"}>
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className={cn(
+                    "relative overflow-hidden rounded-2xl border border-border p-4 h-full min-h-[112px] bg-gradient-to-br hover:border-accent/30 transition-colors group",
+                    b.gradient
+                  )}
+                  style={{
+                    backgroundColor: "var(--card)",
+                    backgroundImage: b.imageUrl
+                      ? `linear-gradient(to right, rgba(10,10,10,0.88), rgba(10,10,10,0.55)), url(${b.imageUrl})`
+                      : undefined,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                  }}
+                >
+                  {b.badge && (
+                    <Badge variant="premium" size="sm" className="mb-2 w-fit">{b.badge}</Badge>
+                  )}
+                  <p className="text-sm font-bold text-white group-hover:text-accent transition-colors">{b.title}</p>
+                  <p className="text-xs text-white/45 mt-1 line-clamp-2">{b.subtitle}</p>
+                  <span className="inline-flex items-center gap-1 text-[11px] text-accent mt-3">
+                    {b.cta || "İncele"} <ArrowRight size={12} />
+                  </span>
+                </motion.div>
+              </Link>
+            ))}
+          </div>
+        )}
 
         {/* Quick Stats Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
