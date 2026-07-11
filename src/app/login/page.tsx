@@ -8,6 +8,7 @@ import toast from "react-hot-toast"
 import { Button } from "@/components/ui/button"
 import { Glow } from "@/components/effects/glow"
 import { useAuth } from "@/lib/auth"
+import { adminAbsoluteUrl } from "@/lib/admin-host"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,7 +25,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      router.replace(isAdmin ? "/admin" : "/home")
+      if (isAdmin) {
+        window.location.href = adminAbsoluteUrl("/")
+        return
+      }
+      router.replace("/home")
     }
   }, [isAuthenticated, isAdmin, loading, router])
 

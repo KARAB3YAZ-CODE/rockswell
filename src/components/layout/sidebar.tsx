@@ -7,11 +7,12 @@ import { usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { useUIStore } from "@/lib/store"
+import { adminAbsoluteUrl } from "@/lib/admin-host"
 import {
   LayoutDashboard, ShoppingBag, Package,
-  FileText, BarChart3, Settings, HelpCircle, LogOut,
+  FileText, Settings, HelpCircle, LogOut,
   ChevronLeft, MessageSquare, ClipboardList, Percent,
-  ChevronDown, Building2, Users, Warehouse, Shield,
+  ChevronDown, Shield, ExternalLink, Building2,
 } from "lucide-react"
 
 interface NavItem {
@@ -50,31 +51,6 @@ const customerNav: NavItem[] = [
   { label: "Destek", icon: <MessageSquare size={20} />, href: "/account/support" },
 ]
 
-const adminNav: NavItem[] = [
-  { label: "Yönetim Paneli", icon: <LayoutDashboard size={20} />, href: "/admin" },
-  { label: "Kullanıcılar", icon: <Users size={20} />, href: "/admin?tab=users" },
-  { label: "Şirketler", icon: <Building2 size={20} />, href: "/admin?tab=companies" },
-  {
-    label: "Ürünler", icon: <Package size={20} />, href: "/admin?tab=products",
-    children: [
-      { label: "Tüm Ürünler", href: "/admin?tab=products" },
-      { label: "Kategoriler", href: "/products/categories" },
-      { label: "Markalar", href: "/products/brands" },
-    ],
-  },
-  {
-    label: "Siparişler", icon: <ShoppingBag size={20} />, href: "/admin?tab=orders",
-    children: [
-      { label: "Tüm Siparişler", href: "/orders" },
-      { label: "Onay Bekleyen", href: "/orders?status=pending_approval" },
-    ],
-  },
-  { label: "Depolar", icon: <Warehouse size={20} />, href: "/admin?tab=warehouses" },
-  { label: "Kampanyalar", icon: <Percent size={20} />, href: "/admin?tab=campaigns" },
-  { label: "Raporlar", icon: <BarChart3 size={20} />, href: "/admin?tab=reports" },
-  { label: "Sistem", icon: <Settings size={20} />, href: "/admin?tab=settings" },
-]
-
 const bottomItems: NavItem[] = [
   { label: "Ayarlar", icon: <Settings size={20} />, href: "/account/settings" },
   { label: "Yardım", icon: <HelpCircle size={20} />, href: "/account/support" },
@@ -85,7 +61,7 @@ export function Sidebar() {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
   const { isAdmin, company } = useAuth()
-  const navItems = isAdmin ? adminNav : customerNav
+  const navItems = customerNav
 
   return (
     <motion.aside
@@ -97,7 +73,7 @@ export function Sidebar() {
       transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
     >
       <div className="flex items-center h-16 px-4 border-b border-border">
-        <Link href={isAdmin ? "/admin" : "/home"} className="flex items-center gap-3 min-w-0">
+        <Link href="/home" className="flex items-center gap-3 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shrink-0">
             <span className="text-black font-bold text-sm">R</span>
           </div>
@@ -122,12 +98,22 @@ export function Sidebar() {
         </button>
       </div>
 
-      {!isAdmin && sidebarOpen && (
-        <div className="px-3 pt-3">
+      {sidebarOpen && (
+        <div className="px-3 pt-3 space-y-2">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-accent/5 border border-accent/10">
             <Shield size={14} className="text-accent" />
-            <span className="text-xs text-accent font-medium">Bayi Paneli</span>
+            <span className="text-xs text-accent font-medium">{isAdmin ? "Yönetici · Mağaza" : "Bayi Paneli"}</span>
           </div>
+          {isAdmin && (
+            <a
+              href={adminAbsoluteUrl("/")}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white/70 hover:text-white hover:border-accent/30 transition-colors"
+            >
+              <LayoutDashboard size={14} className="text-accent" />
+              Yönetim Paneli
+              <ExternalLink size={12} className="ml-auto text-white/30" />
+            </a>
+          )}
         </div>
       )}
 
@@ -143,7 +129,7 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-border py-3 px-2 space-y-1">
-        {!isAdmin && bottomItems.map((item) => (
+        {bottomItems.map((item) => (
           <NavItemComponent
             key={item.href}
             item={item}

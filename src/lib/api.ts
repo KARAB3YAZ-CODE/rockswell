@@ -991,6 +991,79 @@ export async function getInvoices(): Promise<Invoice[]> {
   return (data ?? []).map(mapInvoice)
 }
 
+/** Admin: all invoices across companies. */
+export async function getAllInvoices(): Promise<(Invoice & { companyName?: string })[]> {
+  await requireAuth()
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("*, companies(name)")
+    .order("created_at", { ascending: false })
+    .limit(200)
+  if (error) err(error.message)
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    ...mapInvoice(row),
+    companyName: (row.companies as { name?: string } | null)?.name ?? "—",
+  }))
+}
+
+export interface AdminReportSummary {
+  revenue: number
+  orderCount: number
+  pendingApproval: number
+  avgOrderValue: number
+  byCompany: { companyId: string; companyName: string; orders: number; revenue: number }[]
+  byStatus: { status: string; count: number }[]
+}
+
+export async function getAdminReports(): Promise<AdminReportSummary> {
+  await requireAuth()
+  const [{ data: orders }, { data: companies }] = await Promise.all([
+    supabase.from("orders").select("id, company_id, status, pricing"),
+    supabase.from("companies").select("id, name"),
+  ])
+
+  const companyNames = new Map((companies ?? []).map((c) => [String(c.id), String(c.name)]))
+  const byCompanyMap = new Map<string, { orders: number; revenue: number }>()
+  const byStatusMap = new Map<string, number>()
+  let revenue = 0
+  let pendingApproval = 0
+
+  for (const row of orders ?? []) {
+    const status = String(row.status)
+    byStatusMap.set(status, (byStatusMap.get(status) ?? 0) + 1)
+    if (status === "pending_approval") pendingApproval += 1
+    const total = Number((row.pricing as { grandTotal?: number } | null)?.grandTotal ?? 0)
+    if (["confirmed", "processing", "shipped", "delivered"].includes(status)) {
+      revenue += total
+    }
+    const cid = String(row.company_id)
+    const cur = byCompanyMap.get(cid) ?? { orders: 0, revenue: 0 }
+    cur.orders += 1
+    if (["confirmed", "processing", "shipped", "delivered"].includes(status)) cur.revenue += total
+    byCompanyMap.set(cid, cur)
+  }
+
+  const orderCount = orders?.length ?? 0
+  const byCompany = [...byCompanyMap.entries()]
+    .map(([companyId, v]) => ({
+      companyId,
+      companyName: companyNames.get(companyId) ?? "—",
+      orders: v.orders,
+      revenue: v.revenue,
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 20)
+
+  return {
+    revenue,
+    orderCount,
+    pendingApproval,
+    avgOrderValue: orderCount ? revenue / Math.max(1, byCompany.reduce((s, c) => s + (c.revenue > 0 ? c.orders : 0), 0) || orderCount) : 0,
+    byCompany,
+    byStatus: [...byStatusMap.entries()].map(([status, count]) => ({ status, count })),
+  }
+}
+
 // ─── Warehouses ─────────────────────────────────────────────────────────────
 
 export async function getWarehouses(): Promise<Warehouse[]> {
