@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import toast from "react-hot-toast"
+import { GlassCard } from "@/components/effects/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -196,8 +197,8 @@ export function AdminProducts() {
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         {/* Side groups */}
         {browse !== "all" && (
-          <div className="w-full lg:w-[220px] shrink-0 rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden h-fit max-h-[70vh] flex flex-col">
-            <div className="px-3 py-2.5 border-b border-white/5 text-xs text-white/40 font-medium flex items-center gap-1.5">
+          <div className="w-full lg:w-[220px] shrink-0 rounded-2xl border border-border bg-card/60 overflow-hidden h-fit max-h-[70vh] flex flex-col">
+            <div className="px-3 py-2.5 border-b border-border text-xs text-white/40 font-medium flex items-center gap-1.5">
               <Filter size={12} />
               {browse === "category" ? "Kategoriler" : "Markalar"}
             </div>
@@ -232,7 +233,7 @@ export function AdminProducts() {
 
         <div className="space-y-3 min-w-0 flex-1 w-full">
           {/* Toolbar */}
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 space-y-3">
+          <div className="rounded-2xl border border-border bg-card/60 p-3 space-y-3">
             <div className="flex flex-col sm:flex-row gap-2">
               <div className="relative flex-1">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
@@ -249,15 +250,15 @@ export function AdminProducts() {
                   onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(0) }}
                   className={cn(inputCls, "w-auto min-w-[120px]")}
                 >
-                  <option value="all">Tüm durum</option>
-                  <option value="active">Aktif</option>
-                  <option value="inactive">Pasif</option>
+                  <option value="all" className="bg-card">Tüm durum</option>
+                  <option value="active" className="bg-card">Aktif</option>
+                  <option value="inactive" className="bg-card">Pasif</option>
                 </select>
-                <div className="flex rounded-xl border border-white/10 overflow-hidden">
+                <div className="flex rounded-xl border border-border overflow-hidden bg-white/[0.02]">
                   <button
                     type="button"
                     onClick={() => setView("grid")}
-                    className={cn("px-2.5 py-2", view === "grid" ? "bg-white/10 text-white" : "text-white/40")}
+                    className={cn("px-2.5 py-2 transition-colors", view === "grid" ? "bg-accent/15 text-accent" : "text-white/40 hover:text-white")}
                     title="Kart görünümü"
                   >
                     <LayoutGrid size={15} />
@@ -265,7 +266,7 @@ export function AdminProducts() {
                   <button
                     type="button"
                     onClick={() => setView("list")}
-                    className={cn("px-2.5 py-2", view === "list" ? "bg-white/10 text-white" : "text-white/40")}
+                    className={cn("px-2.5 py-2 transition-colors", view === "list" ? "bg-accent/15 text-accent" : "text-white/40 hover:text-white")}
                     title="Liste görünümü"
                   >
                     <List size={15} />
@@ -343,9 +344,9 @@ export function AdminProducts() {
 
           {/* Content */}
           {loading ? (
-            <div className="p-4 rounded-2xl border border-white/[0.08]"><TableSkeleton rows={6} /></div>
+            <div className="p-4 rounded-2xl border border-border bg-card/40"><TableSkeleton rows={6} /></div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16 rounded-2xl border border-white/[0.08] bg-white/[0.02]">
+            <div className="text-center py-16 rounded-2xl border border-border bg-card/40">
               <Package size={36} className="mx-auto text-white/20 mb-3" />
               <p className="text-sm text-white/40">Ürün bulunamadı</p>
             </div>
@@ -359,22 +360,24 @@ export function AdminProducts() {
                 const isSel = selected.has(product.id)
                 const thumb = product.images.find((u) => Boolean(u?.trim()))
                 return (
-                  <div
+                  <GlassCard
                     key={product.id}
+                    intensity="light"
                     className={cn(
-                      "rounded-2xl border bg-[#14161c] overflow-hidden transition-all flex flex-col min-w-0",
+                      "p-0 overflow-hidden transition-all flex flex-col min-w-0 group",
                       isSel
-                        ? "border-accent/50 shadow-[0_0_0_1px_rgba(57,255,20,0.15)]"
-                        : "border-white/[0.08] hover:border-white/20 hover:bg-[#171a22]"
+                        ? "border-accent/40 shadow-lg shadow-accent/5"
+                        : "hover:border-accent/20"
                     )}
                   >
-                    <div className="relative w-full aspect-square bg-[#0c0e12] border-b border-white/5">
+                    <div className="relative w-full aspect-[5/4] bg-gradient-to-b from-white/[0.04] to-transparent border-b border-white/5">
+                      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(57,255,20,0.04),transparent_70%)]" />
                       {thumb ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={thumb}
                           alt={product.name}
-                          className="absolute inset-0 w-full h-full object-contain p-4"
+                          className="absolute inset-0 w-full h-full object-contain p-5 mix-blend-normal opacity-95"
                           loading="lazy"
                           onError={(e) => {
                             e.currentTarget.style.display = "none"
@@ -389,12 +392,14 @@ export function AdminProducts() {
                           thumb ? "hidden" : ""
                         )}
                       >
-                        <Package size={36} strokeWidth={1.25} />
-                        <span className="text-[11px]">Fotoğraf yok</span>
+                        <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/15 flex items-center justify-center">
+                          <Package size={26} className="text-accent/50" strokeWidth={1.25} />
+                        </div>
+                        <span className="text-[11px] text-white/35">Fotoğraf yok</span>
                       </div>
 
                       <label
-                        className="absolute top-3 left-3 z-10 flex items-center justify-center w-6 h-6 rounded-lg bg-black/60 border border-white/15 backdrop-blur-sm cursor-pointer"
+                        className="absolute top-3 left-3 z-10 flex items-center justify-center w-6 h-6 rounded-lg bg-card/80 border border-border backdrop-blur-sm cursor-pointer"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
@@ -411,18 +416,21 @@ export function AdminProducts() {
                       </div>
                     </div>
 
-                    <div className="p-4 flex flex-col gap-3 flex-1">
+                    <div className="p-4 flex flex-col gap-3 flex-1 bg-gradient-to-b from-transparent to-card/40">
                       <div className="min-w-0 space-y-1">
-                        <p className="text-[13px] font-semibold text-white leading-snug line-clamp-2" title={product.name}>
+                        <p className="text-[10px] text-white/30 font-mono truncate">{product.sku}</p>
+                        <p
+                          className="text-[13px] font-semibold text-white leading-snug line-clamp-2 group-hover:text-accent transition-colors"
+                          title={product.name}
+                        >
                           {product.name}
                         </p>
                         <p className="text-[11px] text-white/40 truncate">
                           {[product.brand, product.category].filter(Boolean).join(" · ") || "—"}
                         </p>
-                        <p className="text-[10px] text-white/25 font-mono truncate">{product.sku}</p>
                       </div>
 
-                      <div className="flex items-end justify-between gap-2 mt-auto">
+                      <div className="flex items-end justify-between gap-2 mt-auto pt-2 border-t border-white/5">
                         <div>
                           <p className="text-base font-bold text-accent tabular-nums leading-none">
                             {formatPrice(product.basePrice)}
@@ -434,10 +442,10 @@ export function AdminProducts() {
                         {missing.length > 0 && <Warn items={missing} />}
                       </div>
 
-                      <div className="flex items-center gap-1 pt-1 border-t border-white/5">
+                      <div className="flex items-center gap-1">
                         <a
                           href={siteAbsoluteUrl(`/products/${product.id}`)}
-                          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5"
+                          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors"
                           title="Mağazada gör"
                         >
                           <Eye size={15} />
@@ -445,23 +453,23 @@ export function AdminProducts() {
                         <button
                           type="button"
                           onClick={() => setForm(product)}
-                          className="flex-1 h-9 rounded-xl text-xs font-medium text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                          className="flex-1 h-9 rounded-xl text-xs font-medium text-white/60 hover:text-accent hover:bg-accent/10 transition-colors"
                         >
                           Düzenle
                         </button>
                         <IconBtn icon={Trash2} label="Sil" tone="danger" onClick={() => setDel(product)} />
                       </div>
                     </div>
-                  </div>
+                  </GlassCard>
                 )
               })}
             </div>
           ) : (
-            <div className="rounded-2xl border border-white/[0.08] overflow-hidden bg-white/[0.02]">
+            <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
               <div className="overflow-auto max-h-[65vh]">
                 <table className="w-full">
-                  <thead className="sticky top-0 bg-[#12141a] z-10">
-                    <tr className="border-b border-white/5">
+                  <thead className="sticky top-0 bg-card z-10">
+                    <tr className="border-b border-border">
                       <th className="p-3 w-10" />
                       <th className="text-left text-xs font-medium text-white/30 p-3">Ürün</th>
                       <th className="text-left text-xs font-medium text-white/30 p-3">SKU</th>
@@ -474,29 +482,30 @@ export function AdminProducts() {
                   <tbody>
                     {pageItems.map((product) => {
                       const missing = missingProduct(product)
+                      const thumb = product.images.find((u) => u?.trim())
                       return (
-                        <tr key={product.id} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
+                        <tr key={product.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
                           <td className="p-3">
                             <input
                               type="checkbox"
                               checked={selected.has(product.id)}
                               onChange={() => toggleOne(product.id)}
-                              className="accent-[var(--accent,#39ff14)]"
+                              className="accent-[#39ff14]"
                             />
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-14 h-14 rounded-xl bg-[#0c0e12] border border-white/5 overflow-hidden shrink-0 flex items-center justify-center">
-                                {product.images.find((u) => u?.trim()) ? (
+                              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-white/[0.06] to-transparent border border-border overflow-hidden shrink-0 flex items-center justify-center">
+                                {thumb ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
-                                    src={product.images.find((u) => u?.trim())}
+                                    src={thumb}
                                     alt=""
                                     className="w-full h-full object-contain p-1.5"
                                     loading="lazy"
                                   />
                                 ) : (
-                                  <Package size={16} className="text-white/25" />
+                                  <Package size={16} className="text-accent/40" />
                                 )}
                               </div>
                               <div className="min-w-0">
@@ -511,7 +520,7 @@ export function AdminProducts() {
                             </div>
                           </td>
                           <td className="p-3 text-sm text-white/40 font-mono">{product.sku}</td>
-                          <td className="p-3 text-right text-sm font-medium text-white">{formatPrice(product.basePrice)}</td>
+                          <td className="p-3 text-right text-sm font-medium text-accent">{formatPrice(product.basePrice)}</td>
                           <td className="p-3 text-right text-sm text-white/60">{product.stock[0]?.available ?? 0}</td>
                           <td className="p-3 text-center">
                             <Badge variant={product.isActive ? "success" : "default"} size="sm">
