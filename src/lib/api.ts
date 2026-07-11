@@ -882,6 +882,7 @@ export interface ProductInput {
   stockQuantity: number
   isActive: boolean
   images?: string[]
+  compatibleVehicles?: Product["compatibleVehicles"]
 }
 
 export async function uploadProductImage(file: File, folderKey: string): Promise<string> {
@@ -929,6 +930,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
       base_price: input.basePrice,
       is_active: input.isActive,
       images: input.images ?? [],
+      compatible_vehicles: input.compatibleVehicles ?? [],
       stock,
     })
     .select()
@@ -946,19 +948,24 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Pr
     ? stockArr.map((s, i) => (i === 0 ? { ...s, quantity: input.stockQuantity, available: input.stockQuantity, lastUpdated: now } : s))
     : [{ warehouseId: "", warehouseName: "Ana Depo", quantity: input.stockQuantity, reserved: 0, available: input.stockQuantity, location: "", lastUpdated: now }]
 
+  const payload: Record<string, unknown> = {
+    sku: input.sku,
+    name: input.name,
+    brand: input.brand,
+    category: input.category,
+    description: input.description,
+    base_price: input.basePrice,
+    is_active: input.isActive,
+    images: input.images ?? [],
+    stock,
+  }
+  if (input.compatibleVehicles !== undefined) {
+    payload.compatible_vehicles = input.compatibleVehicles
+  }
+
   const { data, error } = await supabase
     .from("products")
-    .update({
-      sku: input.sku,
-      name: input.name,
-      brand: input.brand,
-      category: input.category,
-      description: input.description,
-      base_price: input.basePrice,
-      is_active: input.isActive,
-      images: input.images ?? [],
-      stock,
-    })
+    .update(payload)
     .eq("id", id)
     .select()
     .single()

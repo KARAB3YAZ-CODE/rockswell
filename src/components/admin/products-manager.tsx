@@ -602,6 +602,8 @@ export function AdminProducts() {
       {form && (
         <ProductForm
           product={form === "new" ? null : form}
+          categoryOptions={categories.map(([n]) => n).filter((n) => n !== "Kategorisiz")}
+          vehicleBrandOptions={vehicleBrands.map(([n]) => n).filter((n) => n !== "Uyumluluk yok")}
           onClose={() => setForm(null)}
           onSaved={() => { setForm(null); refetch() }}
         />
@@ -681,12 +683,62 @@ export function AdminProducts() {
   )
 }
 
-export function ProductForm({ product, onClose, onSaved }: { product: Product | null; onClose: () => void; onSaved: () => void }) {
+const COMMON_VEHICLE_BRANDS = [
+  "AUDI", "BMW", "MERCEDES", "VOLKSWAGEN", "SEAT", "SKODA", "RENAULT", "FIAT",
+  "PEUGEOT", "CITROEN", "FORD", "OPEL", "DACIA", "HYUNDAI", "HONDA", "TOYOTA",
+  "MAZDA", "NISSAN", "VOLVO", "KIA", "PORSCHE", "JEEP", "LAND ROVER", "TOFAS",
+]
+
+function uniqueSorted(values: string[]) {
+  return [...new Set(values.map((v) => v.trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "tr"))
+}
+
+function applyVehicleBrands(
+  existing: Product["compatibleVehicles"],
+  brands: string[]
+): Product["compatibleVehicles"] {
+  const selected = new Set(brands.map((b) => b.trim()).filter(Boolean))
+  const kept = (existing ?? []).filter((v) => selected.has(v.brand?.trim()))
+  const keptBrands = new Set(kept.map((v) => v.brand.trim()))
+  const stubs = [...selected]
+    .filter((b) => !keptBrands.has(b))
+    .map((brand) => ({
+      brand,
+      model: "",
+      yearStart: 0,
+      yearEnd: 0,
+      engine: "",
+      fuel: "",
+      transmission: "",
+    }))
+  return [...kept, ...stubs]
+}
+
+export function ProductForm({
+  product,
+  categoryOptions = [],
+  vehicleBrandOptions = [],
+  onClose,
+  onSaved,
+}: {
+  product: Product | null
+  categoryOptions?: string[]
+  vehicleBrandOptions?: string[]
+  onClose: () => void
+  onSaved: () => void
+}) {
   const isEdit = !!product
   const [sku, setSku] = useState(product?.sku ?? "")
   const [name, setName] = useState(product?.name ?? "")
-  const [brand, setBrand] = useState(product?.brand ?? "")
+  const [brand, setBrand] = useState(product?.brand ?? "ROCKSWELL")
   const [category, setCategory] = useState(product?.category ?? "")
+  const [categoryCustom, setCategoryCustom] = useState(false)
+  const [vehicleBrands, setVehicleBrands] = useState<string[]>(() =>
+    uniqueSorted((product?.compatibleVehicles ?? []).map((v) => v.brand))
+  )
+  const [brandQuery, setBrandQuery] = useState("")
+  const [customVehicleBrand, setCustomVehicleBrand] = useState("")
   const [description, setDescription] = useState(product?.description ?? "")
   const [basePrice, setBasePrice] = useState(String(product?.basePrice ?? ""))
   const [stockQuantity, setStockQuantity] = useState(String(product?.stock[0]?.available ?? "0"))
@@ -697,6 +749,36 @@ export function ProductForm({ product, onClose, onSaved }: { product: Product | 
   const [saving, setSaving] = useState(false)
 
   const folderKey = product?.id || sku || "new"
+
+  const allCategories = useMemo(
+    () => uniqueSorted([...categoryOptions, category]),
+    [categoryOptions, category]
+  )
+
+  const allVehicleBrandOptions = useMemo(
+    () => uniqueSorted([...COMMON_VEHICLE_BRANDS, ...vehicleBrandOptions, ...vehicleBrands]),
+    [vehicleBrandOptions, vehicleBrands]
+  )
+
+  const filteredBrandOptions = useMemo(() => {
+    const q = brandQuery.trim().toLowerCase()
+    if (!q) return allVehicleBrandOptions
+    return allVehicleBrandOptions.filter((b) => b.toLowerCase().includes(q))
+  }, [allVehicleBrandOptions, brandQuery])
+
+  const toggleVehicleBrand = (b: string) => {
+    setVehicleBrands((prev) =>
+      prev.includes(b) ? prev.filter((x) => x !== b) : uniqueSorted([...prev, b])
+    )
+  }
+
+  const addCustomVehicleBrand = () => {
+    const next = customVehicleBrand.trim().toUpperCase()
+    if (!next) return
+    setVehicleBrands((prev) => uniqueSorted([...prev, next]))
+    setCustomVehicleBrand("")
+    setBrandQuery("")
+  }
 
   const addUrl = () => {
     const url = imageUrl.trim()
@@ -740,13 +822,19 @@ export function ProductForm({ product, onClose, onSaved }: { product: Product | 
 
   const submit = async () => {
     if (!name.trim() || !sku.trim()) { toast.error("Ad ve SKU gerekli"); return }
+    if (!category.trim()) { toast.error("Kategori seçin veya yazın"); return }
     setSaving(true)
     const input: ProductInput = {
-      sku, name, brand, category, description,
+      sku,
+      name,
+      brand: brand.trim() || "ROCKSWELL",
+      category: category.trim(),
+      description,
       basePrice: Number(basePrice) || 0,
       stockQuantity: Number(stockQuantity) || 0,
       isActive,
       images,
+      compatibleVehicles: applyVehicleBrands(product?.compatibleVehicles ?? [], vehicleBrands),
     }
     try {
       if (isEdit && product) { await updateProduct(product.id, input); toast.success("Ürün güncellendi") }
@@ -760,97 +848,276 @@ export function ProductForm({ product, onClose, onSaved }: { product: Product | 
   }
 
   return (
-    <Modal title={isEdit ? "Ürünü Düzenle" : "Yeni Ürün"} icon={Package} size="lg" onClose={onClose}>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Ürün Adı"><input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} /></Field>
-        <Field label="SKU"><input value={sku} onChange={(e) => setSku(e.target.value)} className={inputCls} /></Field>
-        <Field label="Marka"><input value={brand} onChange={(e) => setBrand(e.target.value)} className={inputCls} /></Field>
-        <Field label="Kategori"><input value={category} onChange={(e) => setCategory(e.target.value)} className={inputCls} /></Field>
-        <Field label="Fiyat (₺)"><input type="number" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} className={inputCls} /></Field>
-        <Field label="Stok Adedi"><input type="number" value={stockQuantity} onChange={(e) => setStockQuantity(e.target.value)} className={inputCls} /></Field>
-      </div>
-      <Field label="Açıklama"><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className={cn(inputCls, "h-auto py-2 resize-none")} /></Field>
-
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium text-white/50">Fotoğraflar ({images.length})</p>
-          <label className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-accent/30 bg-accent/10 text-accent cursor-pointer hover:bg-accent/15">
-            <ImagePlus size={13} />
-            {uploading ? "Yükleniyor…" : "Dosya yükle"}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              multiple
-              className="hidden"
-              disabled={uploading}
-              onChange={(e) => {
-                void onUpload(e.target.files)
-                e.target.value = ""
-              }}
-            />
-          </label>
-        </div>
-
-        {images.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
-            <Package size={28} className="mx-auto text-white/20 mb-2" />
-            <p className="text-xs text-white/40">Henüz fotoğraf yok. Dosya yükleyin veya URL ekleyin.</p>
+    <Modal
+      title={isEdit ? "Ürünü Düzenle" : "Yeni Ürün"}
+      subtitle={isEdit ? product?.sku : "Kategori ve araç markası ile sınıflandırın"}
+      icon={Package}
+      size="lg"
+      onClose={onClose}
+    >
+      <div className="space-y-5">
+        <section className="space-y-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-white/35">Temel bilgiler</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Ürün Adı">
+              <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+            </Field>
+            <Field label="SKU">
+              <input value={sku} onChange={(e) => setSku(e.target.value)} className={inputCls} />
+            </Field>
           </div>
-        ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-            {images.map((url, i) => (
-              <div key={url} className="relative group aspect-square rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="w-full h-full object-contain p-1.5" />
-                {i === 0 && (
-                  <span className="absolute left-1.5 top-1.5 text-[9px] px-1.5 py-0.5 rounded bg-accent text-black font-medium">
-                    Ana
-                  </span>
-                )}
-                <div className="absolute inset-x-0 bottom-0 p-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/80 to-transparent">
-                  {i !== 0 && (
-                    <button
-                      type="button"
-                      title="Ana fotoğraf yap"
-                      onClick={() => makePrimary(url)}
-                      className="flex-1 h-7 rounded-md bg-white/10 hover:bg-accent/30 text-white flex items-center justify-center"
-                    >
-                      <Star size={12} />
-                    </button>
-                  )}
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-white/35">Sınıflandırma</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Kategori">
+              {categoryCustom ? (
+                <div className="space-y-1.5">
+                  <input
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    placeholder="Yeni kategori adı…"
+                    className={inputCls}
+                    autoFocus
+                  />
                   <button
                     type="button"
-                    title="Kaldır"
-                    onClick={() => removeImage(url)}
-                    className="flex-1 h-7 rounded-md bg-danger/20 hover:bg-danger/40 text-danger flex items-center justify-center"
+                    className="text-[11px] text-accent hover:underline"
+                    onClick={() => setCategoryCustom(false)}
                   >
-                    <Trash2 size={12} />
+                    Listeden seç
                   </button>
                 </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <select
+                    value={category}
+                    onChange={(e) => {
+                      if (e.target.value === "__new__") {
+                        setCategoryCustom(true)
+                        setCategory("")
+                        return
+                      }
+                      setCategory(e.target.value)
+                    }}
+                    className={cn(inputCls, "cursor-pointer")}
+                  >
+                    <option value="" className="bg-card">Kategori seçin…</option>
+                    {allCategories.map((c) => (
+                      <option key={c} value={c} className="bg-card">{c}</option>
+                    ))}
+                    <option value="__new__" className="bg-card">+ Yeni kategori yaz…</option>
+                  </select>
+                </div>
+              )}
+            </Field>
+            <Field label="Üretici marka">
+              <input
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                list="product-manufacturer-brands"
+                placeholder="ROCKSWELL"
+                className={inputCls}
+              />
+              <datalist id="product-manufacturer-brands">
+                <option value="ROCKSWELL" />
+              </datalist>
+            </Field>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-white/50">
+                Araç markaları
+                {vehicleBrands.length > 0 && (
+                  <span className="text-white/30 font-normal"> · {vehicleBrands.length} seçili</span>
+                )}
+              </p>
+              {vehicleBrands.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setVehicleBrands([])}
+                  className="text-[11px] text-white/35 hover:text-white"
+                >
+                  Temizle
+                </button>
+              )}
+            </div>
+
+            {vehicleBrands.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {vehicleBrands.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => toggleVehicleBrand(b)}
+                    className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-accent/15 border border-accent/35 text-accent"
+                  >
+                    {b}
+                    <X size={11} />
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            )}
 
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Link2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-            <input
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl() } }}
-              placeholder="veya görsel URL yapıştır…"
-              className={cn(inputCls, "pl-9")}
-            />
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+              <input
+                value={brandQuery}
+                onChange={(e) => setBrandQuery(e.target.value)}
+                placeholder="Araç markası ara (Audi, VW, Seat…)"
+                className={cn(inputCls, "pl-9")}
+              />
+            </div>
+
+            <div className="max-h-36 overflow-y-auto rounded-xl border border-border bg-white/[0.02] p-2 flex flex-wrap gap-1.5 content-start">
+              {filteredBrandOptions.length === 0 ? (
+                <p className="text-[11px] text-white/35 p-2">Sonuç yok — aşağıdan ekleyin</p>
+              ) : (
+                filteredBrandOptions.map((b) => {
+                  const active = vehicleBrands.includes(b)
+                  return (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => toggleVehicleBrand(b)}
+                      className={cn(
+                        "text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors",
+                        active
+                          ? "bg-accent/15 border-accent/40 text-accent"
+                          : "border-white/10 text-white/55 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      {b}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                value={customVehicleBrand}
+                onChange={(e) => setCustomVehicleBrand(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    addCustomVehicleBrand()
+                  }
+                }}
+                placeholder="Listede yoksa yeni araç markası…"
+                className={inputCls}
+              />
+              <Button type="button" variant="secondary" size="sm" onClick={addCustomVehicleBrand}>
+                Ekle
+              </Button>
+            </div>
           </div>
-          <Button type="button" variant="secondary" size="sm" onClick={addUrl}>Ekle</Button>
-        </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-white/35">Fiyat & stok</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Fiyat (₺)">
+              <input type="number" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} className={inputCls} />
+            </Field>
+            <Field label="Stok Adedi">
+              <input type="number" value={stockQuantity} onChange={(e) => setStockQuantity(e.target.value)} className={inputCls} />
+            </Field>
+          </div>
+        </section>
+
+        <Field label="Açıklama">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            className={cn(inputCls, "h-auto py-2 resize-none")}
+          />
+        </Field>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-white/50">Fotoğraflar ({images.length})</p>
+            <label className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-accent/30 bg-accent/10 text-accent cursor-pointer hover:bg-accent/15">
+              <ImagePlus size={13} />
+              {uploading ? "Yükleniyor…" : "Dosya yükle"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => {
+                  void onUpload(e.target.files)
+                  e.target.value = ""
+                }}
+              />
+            </label>
+          </div>
+
+          {images.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
+              <Package size={28} className="mx-auto text-white/20 mb-2" />
+              <p className="text-xs text-white/40">Henüz fotoğraf yok. Dosya yükleyin veya URL ekleyin.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {images.map((url, i) => (
+                <div key={url} className="relative group aspect-square rounded-xl overflow-hidden border border-white/10 bg-white/[0.06]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="" className="w-full h-full object-cover" />
+                  {i === 0 && (
+                    <span className="absolute left-1.5 top-1.5 text-[9px] px-1.5 py-0.5 rounded bg-accent text-black font-medium">
+                      Ana
+                    </span>
+                  )}
+                  <div className="absolute inset-x-0 bottom-0 p-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/80 to-transparent">
+                    {i !== 0 && (
+                      <button
+                        type="button"
+                        title="Ana fotoğraf yap"
+                        onClick={() => makePrimary(url)}
+                        className="flex-1 h-7 rounded-md bg-white/10 hover:bg-accent/30 text-white flex items-center justify-center"
+                      >
+                        <Star size={12} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title="Kaldır"
+                      onClick={() => removeImage(url)}
+                      className="flex-1 h-7 rounded-md bg-danger/20 hover:bg-danger/40 text-danger flex items-center justify-center"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Link2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+              <input
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl() } }}
+                placeholder="veya görsel URL yapıştır…"
+                className={cn(inputCls, "pl-9")}
+              />
+            </div>
+            <Button type="button" variant="secondary" size="sm" onClick={addUrl}>Ekle</Button>
+          </div>
+        </section>
+
+        <Toggle checked={isActive} onChange={setIsActive} label="Ürün aktif (mağazada görünür)" />
+        <Button className="w-full" onClick={submit} disabled={saving || uploading}>
+          {saving ? "Kaydediliyor..." : isEdit ? "Kaydet" : "Oluştur"}
+        </Button>
       </div>
-
-      <Toggle checked={isActive} onChange={setIsActive} label="Ürün aktif (mağazada görünür)" />
-      <Button className="w-full" onClick={submit} disabled={saving || uploading}>
-        {saving ? "Kaydediliyor..." : isEdit ? "Kaydet" : "Oluştur"}
-      </Button>
     </Modal>
   )
 }

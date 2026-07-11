@@ -107,7 +107,7 @@ export function Modal({ title, subtitle, icon: Icon, onClose, children, size = "
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className={cn("w-full bg-card border border-border rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-auto", size === "lg" ? "max-w-2xl" : "max-w-md")}
+        className={cn("w-full bg-card border border-border rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-auto", size === "lg" ? "max-w-3xl" : "max-w-md")}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
