@@ -228,11 +228,11 @@ export default function CustomerHomePage() {
 
   return (
     <Shell>
-      <div className="space-y-8 pb-8">
+      <div className="space-y-8 pb-8 w-full max-w-full min-w-0 overflow-x-hidden">
 
-        {/* Hero Banner — fixed frame; any image size is cropped to fit */}
-        <div className="relative w-full max-w-full min-w-0 overflow-hidden rounded-2xl aspect-[21/9] min-h-[200px] max-h-[420px] h-auto sm:min-h-[260px] group">
-          <Glow color="rgba(57, 255, 20," size={300} opacity={0.06} blur={80} className="top-1/3 left-1/4 pointer-events-none" />
+        {/* Hero Banner — fixed height frame; image never drives layout width */}
+        <div className="relative isolate w-full max-w-full min-w-0 overflow-hidden rounded-2xl h-[200px] sm:h-[280px] lg:h-[340px] group">
+          <Glow color="rgba(57, 255, 20," size={200} opacity={0.06} blur={60} className="top-1/3 left-1/4 pointer-events-none" />
           <AnimatePresence mode="wait">
             <motion.div
               key={currentSlide}
@@ -251,12 +251,12 @@ export default function CustomerHomePage() {
                 <img
                   src={slides[currentSlide].imageUrl}
                   alt=""
-                  className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
+                  className="absolute inset-0 !max-w-none w-full h-full object-cover object-center pointer-events-none select-none"
                   draggable={false}
                 />
               ) : null}
               <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/25" />
-              <div className="relative z-10 h-full flex flex-col justify-center p-5 sm:p-8 lg:p-12 min-w-0">
+              <div className="relative z-10 h-full flex flex-col justify-center p-5 sm:p-8 lg:p-12 min-w-0 max-w-full overflow-hidden">
                 <div className="flex items-center gap-3 mb-3 sm:mb-4">
                   <Badge variant="premium" className="w-fit">
                     {slides[currentSlide]?.badge === "Hızlı" ? <Zap size={12} /> : slides[currentSlide]?.badge === "Sipariş" ? <ShoppingBag size={12} /> : <Percent size={12} />}
@@ -269,10 +269,10 @@ export default function CustomerHomePage() {
                 <p className="mt-2 sm:mt-3 text-white/60 max-w-lg text-sm lg:text-base leading-relaxed line-clamp-2">
                   {slides[currentSlide]?.subtitle}
                 </p>
-                <Link href={slides[currentSlide]?.href || "/products"} className="mt-4 sm:mt-6 w-fit">
-                  <Button size="lg" className="w-fit group/btn">
-                    <span>{slides[currentSlide]?.cta}</span>
-                    <ArrowRight size={16} className="group-hover/btn:translate-x-0.5 transition-transform" />
+                <Link href={slides[currentSlide]?.href || "/products"} className="mt-4 sm:mt-6 w-fit max-w-full">
+                  <Button size="lg" className="w-fit max-w-full group/btn">
+                    <span className="truncate">{slides[currentSlide]?.cta}</span>
+                    <ArrowRight size={16} className="shrink-0 group-hover/btn:translate-x-0.5 transition-transform" />
                   </Button>
                 </Link>
               </div>
@@ -385,7 +385,7 @@ export default function CustomerHomePage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                   className={cn(
-                    "relative w-full aspect-[16/9] overflow-hidden rounded-2xl border border-border bg-gradient-to-br hover:border-accent/30 transition-colors group",
+                    "relative w-full max-w-full aspect-[16/9] max-h-[180px] overflow-hidden rounded-2xl border border-border bg-gradient-to-br hover:border-accent/30 transition-colors group isolate",
                     b.gradient
                   )}
                   style={{ backgroundColor: "var(--card)" }}
@@ -395,7 +395,7 @@ export default function CustomerHomePage() {
                     <img
                       src={b.imageUrl}
                       alt=""
-                      className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
+                      className="absolute inset-0 !max-w-none w-full h-full object-cover object-center pointer-events-none select-none"
                       draggable={false}
                     />
                   ) : null}

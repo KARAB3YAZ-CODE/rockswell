@@ -112,8 +112,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div
         className={cn(
-          "flex flex-col min-h-screen transition-all duration-300 w-full min-w-0",
-          sidebarOpen ? "lg:ml-[240px]" : "lg:ml-[72px]"
+          "flex flex-col min-h-screen transition-all duration-300 min-w-0 max-w-full",
+          // w-full + ml causes page-wide horizontal overflow past the viewport
+          sidebarOpen
+            ? "lg:ml-[240px] lg:w-[calc(100%-240px)]"
+            : "lg:ml-[72px] lg:w-[calc(100%-72px)]"
         )}
       >
         <Header />
