@@ -12,6 +12,8 @@ import {
 } from "./mappers"
 import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricingFromLines } from "./pricing"
 import { createInvoiceForOrder } from "./invoices"
+import { applyStockMovement, assertStockAvailable, orderItemsToStockLines, syncWarehouseUsedCapacity } from "./inventory"
+import { decodeVin, looksLikeVin } from "./vin"
 import type {
   Product, Order, Company, User, Warehouse,
   Campaign, Notification, DashboardStats, Address, Invoice,
@@ -26,6 +28,13 @@ async function requireAuth() {
   if (error) throw error
   if (!session) err("Oturum bulunamadı. Lütfen giriş yapın.")
   return session
+}
+
+/** App-layer admin gate (defense in depth alongside RLS). */
+async function requireAdminUser(): Promise<User> {
+  const user = await getCurrentUser()
+  if (user.role !== "admin") err("Bu işlem için yönetici olmalısınız")
+  return user
 }
 
 /** Calls an admin API route with the caller's access token attached. */
@@ -323,7 +332,7 @@ export async function getProducts(): Promise<Product[]> {
 
 /** Admin catalog: active + inactive, no customer price overlay. */
 export async function getAllProductsAdmin(): Promise<Product[]> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("products")
     .select("*")
@@ -333,7 +342,7 @@ export async function getAllProductsAdmin(): Promise<Product[]> {
 }
 
 export async function bulkSetProductActive(ids: string[], isActive: boolean): Promise<number> {
-  await requireAuth()
+  await requireAdminUser()
   if (!ids.length) return 0
   const { error, count } = await supabase
     .from("products")
@@ -344,7 +353,7 @@ export async function bulkSetProductActive(ids: string[], isActive: boolean): Pr
 }
 
 export async function bulkDeleteProducts(ids: string[]): Promise<number> {
-  await requireAuth()
+  await requireAdminUser()
   if (!ids.length) return 0
   const { error, count } = await supabase
     .from("products")
@@ -355,7 +364,7 @@ export async function bulkDeleteProducts(ids: string[]): Promise<number> {
 }
 
 export async function bulkAdjustProductPrices(ids: string[], percent: number): Promise<number> {
-  await requireAuth()
+  await requireAdminUser()
   if (!ids.length) return 0
   if (!Number.isFinite(percent) || percent === 0) err("Geçerli bir yüzde girin")
   if (Math.abs(percent) > 100) err("Yüzde en fazla ±100 olabilir")
@@ -404,18 +413,47 @@ export async function searchProducts(query: string): Promise<Product[]> {
   const q = query.trim()
   if (!q) return getProducts()
 
-  const { data, error } = await supabase
-    .from("products")
-    .select("*")
-    .eq("is_active", true)
-    .or(`name.ilike.%${q}%,sku.ilike.%${q}%,brand.ilike.%${q}%,category.ilike.%${q}%`)
-    .order("name")
-    .limit(100)
+  const products = await getProducts()
+  const ql = q.toLocaleLowerCase("tr")
 
-  if (error) err(error.message)
+  if (looksLikeVin(q)) {
+    const decoded = decodeVin(q)
+    const make = decoded?.make?.toLocaleLowerCase("tr")
+    const year = decoded?.year
+    const matched = products.filter((p) =>
+      p.compatibleVehicles.some((v) => {
+        const brandOk = make
+          ? v.brand.toLocaleLowerCase("tr").includes(make) || make.includes(v.brand.toLocaleLowerCase("tr"))
+          : true
+        if (!brandOk) return false
+        if (!year) return true
+        const start = v.yearStart || 0
+        const end = v.yearEnd || 9999
+        return year >= start && year <= end
+      })
+    )
+    if (matched.length) return matched.slice(0, 100)
+    // Unknown WMI: fall through to text search on the raw VIN string
+  }
 
-  const results = (data ?? []).map(mapProduct)
-  return applyCustomerPrices(results)
+  return products
+    .filter((p) => {
+      if (p.name.toLocaleLowerCase("tr").includes(ql)) return true
+      if (p.sku.toLocaleLowerCase("tr").includes(ql)) return true
+      if (p.brand.toLocaleLowerCase("tr").includes(ql)) return true
+      if (p.category.toLocaleLowerCase("tr").includes(ql)) return true
+      if (p.oemNumbers.some((o) => o.toLocaleLowerCase("tr").includes(ql))) return true
+      if (
+        p.compatibleVehicles.some(
+          (v) =>
+            v.brand.toLocaleLowerCase("tr").includes(ql) ||
+            v.model.toLocaleLowerCase("tr").includes(ql)
+        )
+      )
+        return true
+      return false
+    })
+    .slice(0, 100)
 }
 
 export async function getProductsByBrand(brand: string): Promise<Product[]> {
@@ -562,7 +600,10 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   const discountRate = await getCustomerDiscountRate()
   const productIds = [...new Set(input.items.map((i) => i.productId))]
   const [{ data: productRows }, { data: priceRows }, campaigns] = await Promise.all([
-    supabase.from("products").select("id, category, brand, compatible_vehicles").in("id", productIds),
+    supabase
+      .from("products")
+      .select("id, category, brand, compatible_vehicles, stock, name")
+      .in("id", productIds),
     supabase
       .from("customer_prices")
       .select("product_id")
@@ -577,6 +618,8 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
       {
         category: String(row.category ?? ""),
         brand: String(row.brand ?? ""),
+        name: String(row.name ?? ""),
+        stock: row.stock,
         vehicleBrands: ((row.compatible_vehicles as { brand?: string }[]) ?? [])
           .map((v) => String(v.brand ?? ""))
           .filter(Boolean),
@@ -584,6 +627,15 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     ])
   )
   const lockedIds = new Set((priceRows ?? []).map((r) => String(r.product_id)))
+
+  // Stock availability check (quotations do not reserve)
+  if (!input.asQuotation) {
+    for (const item of input.items) {
+      const meta = productMap.get(item.productId)
+      if (!meta) err(`Ürün bulunamadı: ${item.productName}`)
+      assertStockAvailable(meta.stock, item.warehouseId, item.quantity, item.productName || meta.name)
+    }
+  }
 
   const orderItems: Order["items"] = input.items.map((item) => ({
     productId: item.productId,
@@ -648,6 +700,16 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     .single()
 
   if (error || !data) err(error?.message ?? "Sipariş oluşturulamadı")
+
+  if (!input.asQuotation) {
+    try {
+      await applyStockMovement(supabase, orderItemsToStockLines(orderItems), "reserve")
+    } catch (stockErr) {
+      await supabase.from("orders").delete().eq("id", data.id)
+      err(stockErr instanceof Error ? stockErr.message : "Stok rezerve edilemedi")
+    }
+  }
+
   return mapOrder(data)
 }
 
@@ -655,8 +717,15 @@ export async function updateOrderStatus(
   id: string,
   status: Order["status"]
 ): Promise<Order> {
-  const user = await getCurrentUser()
-  if (user.role !== "admin") err("Sipariş durumunu yalnızca yönetici değiştirebilir")
+  await requireAdminUser()
+  const { data: existing, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", id)
+    .single()
+  if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
+
+  const prev = String(existing.status)
   const { data, error } = await supabase
     .from("orders")
     .update({ status })
@@ -666,7 +735,32 @@ export async function updateOrderStatus(
 
   if (error || !data) err(error?.message ?? "Sipariş güncellenemedi")
 
-  // Generate an invoice once the order is confirmed (admin approval path).
+  const lines = orderItemsToStockLines(
+    (Array.isArray(data.items) ? data.items : []) as Array<{
+      productId: string
+      warehouseId: string
+      quantity: number
+      productName?: string
+    }>
+  )
+
+  try {
+    if (
+      ["confirmed", "processing", "shipped", "delivered"].includes(status) &&
+      ["draft", "pending_approval", "approved", "quotation"].includes(prev)
+    ) {
+      await applyStockMovement(supabase, lines, "commit")
+    } else if (status === "cancelled" && !["cancelled", "returned", "delivered", "shipped"].includes(prev)) {
+      if (["draft", "pending_approval", "approved"].includes(prev)) {
+        await applyStockMovement(supabase, lines, "release")
+      }
+    } else if (status === "returned" && prev !== "returned") {
+      await applyStockMovement(supabase, lines, "restock")
+    }
+  } catch {
+    /* stock best-effort after status write */
+  }
+
   if (["confirmed", "processing", "shipped", "delivered"].includes(status)) {
     try {
       await createInvoiceForOrder(supabase, data)
@@ -678,11 +772,57 @@ export async function updateOrderStatus(
   return mapOrder(data)
 }
 
+/** Dealer requests return for a delivered order. */
+export async function requestOrderReturn(id: string, reason: string): Promise<Order> {
+  const user = await getCurrentUser()
+  const note = reason.trim()
+  if (!note) err("İade nedeni gerekli")
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", id)
+    .single()
+  if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
+  if (user.role !== "admin" && existing.user_id !== user.id && existing.company_id !== user.companyId) {
+    err("Bu siparişe erişiminiz yok")
+  }
+  if (existing.status !== "delivered") err("Yalnızca teslim edilmiş siparişler iade edilebilir")
+
+  const notes = [String(existing.notes ?? "").trim(), `İade talebi: ${note}`].filter(Boolean).join("\n")
+  const { data, error } = await supabase
+    .from("orders")
+    .update({ status: "returned", notes })
+    .eq("id", id)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "İade talebi oluşturulamadı")
+
+  try {
+    await applyStockMovement(
+      supabase,
+      orderItemsToStockLines(
+        (Array.isArray(data.items) ? data.items : []) as Array<{
+          productId: string
+          warehouseId: string
+          quantity: number
+          productName?: string
+        }>
+      ),
+      "restock"
+    )
+  } catch {
+    /* best-effort */
+  }
+
+  return mapOrder(data)
+}
+
 export async function bulkUpdateOrderStatus(
   ids: string[],
   status: Order["status"]
 ): Promise<number> {
-  await requireAuth()
+  await requireAdminUser()
   let n = 0
   for (const id of ids) {
     await updateOrderStatus(id, status)
@@ -744,7 +884,7 @@ export async function getCampaigns(): Promise<Campaign[]> {
 }
 
 export async function getAllCampaigns(): Promise<Campaign[]> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("campaigns")
     .select("*")
@@ -766,7 +906,7 @@ export interface CreateCampaignInput {
 }
 
 export async function createCampaign(input: CreateCampaignInput): Promise<Campaign> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("campaigns")
     .insert({
@@ -837,7 +977,7 @@ export interface AdminStats {
 }
 
 export async function getAdminStats(): Promise<AdminStats> {
-  await requireAuth()
+  await requireAdminUser()
   const [users, companies, orders, products, revenueRows] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("companies").select("id", { count: "exact", head: true }),
@@ -872,7 +1012,7 @@ export interface AdminUserRow {
 }
 
 export async function getAllUsers(): Promise<AdminUserRow[]> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("profiles")
     .select("id, name, surname, role, phone, is_active, company_id, companies(name)")
@@ -893,7 +1033,7 @@ export async function getAllUsers(): Promise<AdminUserRow[]> {
 }
 
 export async function bulkSetUsersActive(ids: string[], isActive: boolean): Promise<number> {
-  await requireAuth()
+  await requireAdminUser()
   if (ids.length === 0) return 0
   const { error, count } = await supabase
     .from("profiles")
@@ -904,7 +1044,7 @@ export async function bulkSetUsersActive(ids: string[], isActive: boolean): Prom
 }
 
 export async function getAllCompanies(): Promise<Company[]> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("companies")
     .select("*")
@@ -948,21 +1088,21 @@ function companyRow(input: CompanyInput) {
 }
 
 export async function createCompany(input: CompanyInput): Promise<Company> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase.from("companies").insert(companyRow(input)).select().single()
   if (error || !data) err(error?.message ?? "Şirket oluşturulamadı")
   return mapCompany(data)
 }
 
 export async function updateCompany(id: string, input: CompanyInput): Promise<Company> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase.from("companies").update(companyRow(input)).eq("id", id).select().single()
   if (error || !data) err(error?.message ?? "Şirket güncellenemedi")
   return mapCompany(data)
 }
 
 export async function deleteCompany(id: string): Promise<void> {
-  await requireAuth()
+  await requireAdminUser()
   const { error } = await supabase.from("companies").delete().eq("id", id)
   if (error) err(error.message)
 }
@@ -982,7 +1122,7 @@ export interface ProductInput {
 }
 
 export async function uploadProductImage(file: File, folderKey: string): Promise<string> {
-  await requireAuth()
+  await requireAdminUser()
   if (!file.type.startsWith("image/")) err("Sadece görsel dosyaları yüklenebilir")
   if (file.size > 5 * 1024 * 1024) err("Görsel en fazla 5 MB olabilir")
 
@@ -1003,7 +1143,7 @@ export async function uploadProductImage(file: File, folderKey: string): Promise
 }
 
 export async function createProduct(input: ProductInput): Promise<Product> {
-  await requireAuth()
+  await requireAdminUser()
   const { data: wh } = await supabase.from("warehouses").select("id, name").eq("code", "ANA").maybeSingle()
   const now = new Date().toISOString()
   const stock = [{
@@ -1032,16 +1172,31 @@ export async function createProduct(input: ProductInput): Promise<Product> {
     .select()
     .single()
   if (error || !data) err(error?.message ?? "Ürün oluşturulamadı")
+  try {
+    await syncWarehouseUsedCapacity(supabase)
+  } catch {
+    /* best-effort */
+  }
   return mapProduct(data)
 }
 
 export async function updateProduct(id: string, input: ProductInput): Promise<Product> {
-  await requireAuth()
+  await requireAdminUser()
   const { data: existing } = await supabase.from("products").select("stock").eq("id", id).single()
   const now = new Date().toISOString()
   const stockArr = (existing?.stock as Array<Record<string, unknown>>) ?? []
   const stock = stockArr.length
-    ? stockArr.map((s, i) => (i === 0 ? { ...s, quantity: input.stockQuantity, available: input.stockQuantity, lastUpdated: now } : s))
+    ? stockArr.map((s, i) => {
+        if (i !== 0) return s
+        const reserved = Number(s.reserved ?? 0)
+        return {
+          ...s,
+          quantity: input.stockQuantity,
+          reserved,
+          available: Math.max(0, input.stockQuantity - reserved),
+          lastUpdated: now,
+        }
+      })
     : [{ warehouseId: "", warehouseName: "Ana Depo", quantity: input.stockQuantity, reserved: 0, available: input.stockQuantity, location: "", lastUpdated: now }]
 
   const payload: Record<string, unknown> = {
@@ -1066,25 +1221,30 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Pr
     .select()
     .single()
   if (error || !data) err(error?.message ?? "Ürün güncellenemedi")
+  try {
+    await syncWarehouseUsedCapacity(supabase)
+  } catch {
+    /* best-effort */
+  }
   return mapProduct(data)
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  await requireAuth()
+  await requireAdminUser()
   const { error } = await supabase.from("products").delete().eq("id", id)
   if (error) err(error.message)
 }
 
 // Orders
 export async function deleteOrder(id: string): Promise<void> {
-  await requireAuth()
+  await requireAdminUser()
   const { error } = await supabase.from("orders").delete().eq("id", id)
   if (error) err(error.message)
 }
 
 // Campaigns
 export async function updateCampaign(id: string, input: CreateCampaignInput): Promise<Campaign> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("campaigns")
     .update({
@@ -1105,7 +1265,7 @@ export async function updateCampaign(id: string, input: CreateCampaignInput): Pr
 }
 
 export async function deleteCampaign(id: string): Promise<void> {
-  await requireAuth()
+  await requireAdminUser()
   const { error } = await supabase.from("campaigns").delete().eq("id", id)
   if (error) err(error.message)
 }
@@ -1138,28 +1298,28 @@ function warehouseRow(input: WarehouseInput) {
 }
 
 export async function getAllWarehouses(): Promise<Warehouse[]> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase.from("warehouses").select("*").order("name")
   if (error) err(error.message)
   return (data ?? []).map(mapWarehouse)
 }
 
 export async function createWarehouse(input: WarehouseInput): Promise<Warehouse> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase.from("warehouses").insert(warehouseRow(input)).select().single()
   if (error || !data) err(error?.message ?? "Depo oluşturulamadı")
   return mapWarehouse(data)
 }
 
 export async function updateWarehouse(id: string, input: WarehouseInput): Promise<Warehouse> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase.from("warehouses").update(warehouseRow(input)).eq("id", id).select().single()
   if (error || !data) err(error?.message ?? "Depo güncellenemedi")
   return mapWarehouse(data)
 }
 
 export async function deleteWarehouse(id: string): Promise<void> {
-  await requireAuth()
+  await requireAdminUser()
   const { error } = await supabase.from("warehouses").delete().eq("id", id)
   if (error) err(error.message)
 }
@@ -1175,7 +1335,7 @@ export interface AdminUserUpdate {
 }
 
 export async function updateUserByAdmin(id: string, input: AdminUserUpdate): Promise<void> {
-  await requireAuth()
+  await requireAdminUser()
   const patch: Record<string, unknown> = {
     name: input.name,
     surname: input.surname,
@@ -1221,7 +1381,7 @@ export async function getInvoices(): Promise<Invoice[]> {
 
 /** Admin: all invoices across companies. */
 export async function getAllInvoices(): Promise<(Invoice & { companyName?: string })[]> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("invoices")
     .select("*, companies(name)")
@@ -1283,7 +1443,7 @@ export interface AdminReportSummary {
 const PAID_STATUSES = ["confirmed", "processing", "shipped", "delivered"]
 
 export async function getAdminReports(range: "all" | "30" | "90" | "month" = "all"): Promise<AdminReportSummary> {
-  await requireAuth()
+  await requireAdminUser()
   const [{ data: orders }, { data: companies }] = await Promise.all([
     supabase.from("orders").select("id, company_id, status, pricing, created_at"),
     supabase.from("companies").select("id, name"),
@@ -1437,7 +1597,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
 }
 
 export async function updateSiteSettings(input: Partial<SiteSettings>): Promise<SiteSettings> {
-  await requireAuth()
+  await requireAdminUser()
   const user = await getCurrentUser()
   if (user.role !== "admin") err("Bu işlem için admin yetkisi gerekir")
   const patch: Record<string, unknown> = {
@@ -1522,7 +1682,7 @@ export async function getHomeBanners(kind?: HomeBannerKind): Promise<HomeBanner[
 
 /** All banners for admin editor. */
 export async function getAllHomeBanners(): Promise<HomeBanner[]> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("home_banners")
     .select("*")
@@ -1533,7 +1693,7 @@ export async function getAllHomeBanners(): Promise<HomeBanner[]> {
 }
 
 export async function createHomeBanner(input: HomeBannerInput): Promise<HomeBanner> {
-  await requireAuth()
+  await requireAdminUser()
   const { data: maxRow } = await supabase
     .from("home_banners")
     .select("sort_order")
@@ -1564,7 +1724,7 @@ export async function createHomeBanner(input: HomeBannerInput): Promise<HomeBann
 }
 
 export async function updateHomeBanner(id: string, input: HomeBannerInput): Promise<HomeBanner> {
-  await requireAuth()
+  await requireAdminUser()
   const { data, error } = await supabase
     .from("home_banners")
     .update({
@@ -1586,7 +1746,7 @@ export async function updateHomeBanner(id: string, input: HomeBannerInput): Prom
 }
 
 export async function deleteHomeBanner(id: string): Promise<void> {
-  await requireAuth()
+  await requireAdminUser()
   const { error } = await supabase.from("home_banners").delete().eq("id", id)
   if (error) err(error.message)
 }

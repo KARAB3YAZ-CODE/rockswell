@@ -12,7 +12,7 @@ import { Skeleton, TableSkeleton } from "@/components/ui/skeleton"
 import { useOrders, useData } from "@/hooks/use-data"
 import {
   getAdminStats, getAllUsers, getAllCompanies, getAllCampaigns, getAllWarehouses,
-  getCategories, getVehicleBrands,
+  getCategories, getVehicleBrands, getProductBrands,
   createCampaign, updateCampaign, deleteCampaign, setCampaignActive,
   createCompany, updateCompany, deleteCompany,
   createWarehouse, updateWarehouse, deleteWarehouse,
@@ -47,6 +47,7 @@ const ORDER_STATUS_FILTERS: { id: string; label: string }[] = [
   { id: "processing", label: "Hazırlanan" },
   { id: "shipped", label: "Kargoda" },
   { id: "delivered", label: "Teslim" },
+  { id: "returned", label: "İade" },
   { id: "cancelled", label: "İptal" },
 ]
 
@@ -67,6 +68,8 @@ function nextStatusFor(status: Order["status"]): { status: Order["status"]; labe
       return { status: "shipped", label: "Kargola" }
     case "shipped":
       return { status: "delivered", label: "Teslim Et" }
+    case "delivered":
+      return { status: "returned", label: "İade Al" }
     default:
       return null
   }
@@ -1366,7 +1369,9 @@ export function WarehouseForm({
         <Field label="Telefon"><input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} /></Field>
         <Field label="Çalışma Saatleri"><input value={workingHours} onChange={(e) => setWorkingHours(e.target.value)} className={inputCls} /></Field>
         <Field label="Kapasite"><input type="number" value={capacity} onChange={(e) => setCapacity(e.target.value)} className={inputCls} /></Field>
-        <Field label="Kullanılan"><input type="number" value={usedCapacity} onChange={(e) => setUsedCapacity(e.target.value)} className={inputCls} /></Field>
+        <Field label="Kullanılan (stoktan)">
+          <input type="number" value={usedCapacity} readOnly className={cn(inputCls, "opacity-60 cursor-not-allowed")} />
+        </Field>
       </div>
       <AddressFields value={address} onChange={setAddress} cityOptions={cityOptions} />
       <Toggle checked={isActive} onChange={setIsActive} label="Depo aktif" />
@@ -1381,6 +1386,10 @@ export function AdminCampaigns() {
   const { data: campaigns, loading, refetch } = useData(() => getAllCampaigns(), [])
   const { data: categoryOptions } = useData(() => getCategories(), [])
   const { data: vehicleBrandOptions } = useData(() => getVehicleBrands(), [])
+  const { data: productBrandOptions } = useData(
+    () => getProductBrands().then((rows) => rows.map((b) => b.brand)),
+    []
+  )
   const [form, setForm] = useState<Campaign | "new" | null>(null)
   const [del, setDel] = useState<Campaign | null>(null)
   const [filter, setFilter] = useState<"all" | "active" | "inactive" | "expired" | "upcoming">("all")
@@ -1504,6 +1513,7 @@ export function AdminCampaigns() {
           campaign={form === "new" ? null : form}
           categoryOptions={categoryOptions ?? []}
           vehicleBrandOptions={vehicleBrandOptions ?? []}
+          productBrandOptions={productBrandOptions ?? []}
           onClose={() => setForm(null)}
           onSaved={() => { setForm(null); refetch() }}
         />
@@ -1533,12 +1543,14 @@ export function CampaignForm({
   campaign,
   categoryOptions = [],
   vehicleBrandOptions = [],
+  productBrandOptions = [],
   onClose,
   onSaved,
 }: {
   campaign: Campaign | null
   categoryOptions?: string[]
   vehicleBrandOptions?: string[]
+  productBrandOptions?: string[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -1559,8 +1571,8 @@ export function CampaignForm({
     [categoryOptions, categories]
   )
   const allBrands = useMemo(
-    () => [...new Set([...COMMON_VEHICLE_BRANDS, ...vehicleBrandOptions, ...brands].filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr")),
-    [vehicleBrandOptions, brands]
+    () => [...new Set([...COMMON_VEHICLE_BRANDS, ...vehicleBrandOptions, ...productBrandOptions, ...brands].filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr")),
+    [vehicleBrandOptions, productBrandOptions, brands]
   )
 
   const filteredCats = allCategories.filter((c) => !catQuery.trim() || c.toLowerCase().includes(catQuery.trim().toLowerCase()))
@@ -1634,7 +1646,7 @@ export function CampaignForm({
       </div>
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-white/50">Hedef araç markaları {brands.length > 0 && <span className="text-white/30">· {brands.length}</span>}</p>
+        <p className="text-xs font-medium text-white/50">Hedef markalar (ürün veya araç) {brands.length > 0 && <span className="text-white/30">· {brands.length}</span>}</p>
         {brands.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {brands.map((b) => (
@@ -1644,7 +1656,8 @@ export function CampaignForm({
             ))}
           </div>
         )}
-        <input value={brandQuery} onChange={(e) => setBrandQuery(e.target.value)} placeholder="Araç markası ara…" className={inputCls} />
+        <input value={brandQuery} onChange={(e) => setBrandQuery(e.target.value)} placeholder="Ürün veya araç markası ara…" className={inputCls} />
+        <p className="text-[11px] text-white/35">Kampanya, ürün üretici markası veya uyumlu araç markasıyla eşleşir.</p>
         <div className="max-h-28 overflow-y-auto rounded-xl border border-border bg-white/[0.02] p-2 flex flex-wrap gap-1.5">
           {filteredBrands.slice(0, 40).map((b) => (
             <button

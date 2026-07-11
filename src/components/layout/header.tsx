@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth"
 import { useUIStore, useCartStore } from "@/lib/store"
 import { useDashboardStats, useProducts, useNotifications } from "@/hooks/use-data"
 import { markNotificationRead, markAllNotificationsRead } from "@/lib/api"
+import { decodeVin } from "@/lib/vin"
 import type { Product } from "@/lib/types"
 import {
   Search, Bell, ShoppingCart, ChevronDown, User, Settings,
@@ -70,16 +71,25 @@ export function Header() {
 
   const quickResults = useMemo(() => {
     if (!quickSku.trim()) return []
-    const q = quickSku.toLowerCase()
-    const terms = q.split(",").map((t) => t.trim()).filter(Boolean)
+    const terms = quickSku.split(",").map((t) => t.trim()).filter(Boolean)
     return products.filter((p) =>
-      terms.some((t) =>
-        p.name.toLowerCase().includes(t) ||
-        p.sku.toLowerCase().includes(t) ||
-        p.brand.toLowerCase().includes(t) ||
-        p.oemNumbers.some((o) => o.toLowerCase().includes(t)) ||
-        p.compatibleVehicles.some((v) => v.brand.toLowerCase().includes(t) || v.model.toLowerCase().includes(t))
-      )
+      terms.some((t) => {
+        const vin = decodeVin(t)
+        if (vin?.make) {
+          const make = vin.make.toLowerCase()
+          return p.compatibleVehicles.some((v) =>
+            v.brand.toLowerCase().includes(make) || make.includes(v.brand.toLowerCase())
+          )
+        }
+        const ql = t.toLowerCase()
+        return (
+          p.name.toLowerCase().includes(ql) ||
+          p.sku.toLowerCase().includes(ql) ||
+          p.brand.toLowerCase().includes(ql) ||
+          p.oemNumbers.some((o) => o.toLowerCase().includes(ql)) ||
+          p.compatibleVehicles.some((v) => v.brand.toLowerCase().includes(ql) || v.model.toLowerCase().includes(ql))
+        )
+      })
     ).slice(0, 8)
   }, [products, quickSku])
 
@@ -517,13 +527,35 @@ function SearchPreview({ query, products }: { query: string; products: Product[]
   const addToCart = useCartStore((s) => s.addItem)
 
   const results = useMemo(() => {
-    const q = query.toLowerCase()
+    const q = query.trim()
+    if (!q) return []
+    const ql = q.toLowerCase()
+    const vin = decodeVin(q)
+    if (vin?.make) {
+      const make = vin.make.toLowerCase()
+      const year = vin.year
+      const matched = products.filter((p) =>
+        p.compatibleVehicles.some((v) => {
+          const brandOk =
+            v.brand.toLowerCase().includes(make) || make.includes(v.brand.toLowerCase())
+          if (!brandOk) return false
+          if (!year) return true
+          const start = v.yearStart || 0
+          const end = v.yearEnd || 9999
+          return year >= start && year <= end
+        })
+      )
+      if (matched.length) return matched.slice(0, 6)
+    }
     return products.filter((p) =>
-      p.name.toLowerCase().includes(q) ||
-      p.sku.toLowerCase().includes(q) ||
-      p.brand.toLowerCase().includes(q) ||
-      p.category.toLowerCase().includes(q) ||
-      p.oemNumbers.some((o) => o.toLowerCase().includes(q))
+      p.name.toLowerCase().includes(ql) ||
+      p.sku.toLowerCase().includes(ql) ||
+      p.brand.toLowerCase().includes(ql) ||
+      p.category.toLowerCase().includes(ql) ||
+      p.oemNumbers.some((o) => o.toLowerCase().includes(ql)) ||
+      p.compatibleVehicles.some((v) =>
+        v.brand.toLowerCase().includes(ql) || v.model.toLowerCase().includes(ql)
+      )
     ).slice(0, 6)
   }, [query, products])
 
@@ -634,7 +666,7 @@ function SearchEmpty() {
         {[
           { label: "Ürün adı ile ara", desc: "Örn: fren balatası, yağ filtresi" },
           { label: "OEM numarası ile ara", desc: "Örn: 735298499" },
-          { label: "VIN ile ara", desc: "Örn: WBA123456789" },
+          { label: "VIN ile ara", desc: "17 hane · örn. WBAVB13506PT12345" },
           { label: "Marka ile ara", desc: "Örn: Bosch, Mercedes" },
         ].map((tip) => (
           <div key={tip.label} className="flex items-start gap-2.5 px-1">

@@ -91,6 +91,7 @@ function OrdersContent() {
               { key: "processing", label: "Hazırlanıyor" },
               { key: "shipped", label: "Kargoda" },
               { key: "delivered", label: "Teslim Edilen" },
+              { key: "returned", label: "İade" },
             ].map((f) => (
               <button
                 key={f.key || "all"}

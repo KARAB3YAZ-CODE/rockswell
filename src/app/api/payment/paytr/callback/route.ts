@@ -1,6 +1,7 @@
 import { getServiceClient } from "@/lib/supabase-admin"
 import { getPaytrConfig, verifyCallbackHash } from "@/lib/paytr"
 import { createInvoiceForOrder } from "@/lib/invoices"
+import { applyStockMovement, orderItemsToStockLines } from "@/lib/inventory"
 
 export async function POST(request: Request) {
   const config = getPaytrConfig()
@@ -27,9 +28,17 @@ export async function POST(request: Request) {
     .single()
 
   if (!order) {
-    // Respond OK so PayTR stops retrying; nothing to update.
     return new Response("OK", { status: 200 })
   }
+
+  const lines = orderItemsToStockLines(
+    (Array.isArray(order.items) ? order.items : []) as Array<{
+      productId: string
+      warehouseId: string
+      quantity: number
+      productName?: string
+    }>
+  )
 
   if (status === "success") {
     await service
@@ -39,6 +48,11 @@ export async function POST(request: Request) {
         payment: { ...(order.payment ?? {}), status: "paid", paidDate: new Date().toISOString() },
       })
       .eq("id", order.id)
+    try {
+      await applyStockMovement(service, lines, "commit")
+    } catch {
+      /* best-effort */
+    }
     try {
       await createInvoiceForOrder(service, order)
     } catch {
@@ -61,6 +75,11 @@ export async function POST(request: Request) {
         payment: { ...(order.payment ?? {}), status: "failed" },
       })
       .eq("id", order.id)
+    try {
+      await applyStockMovement(service, lines, "release")
+    } catch {
+      /* best-effort */
+    }
   }
 
   return new Response("OK", { status: 200 })

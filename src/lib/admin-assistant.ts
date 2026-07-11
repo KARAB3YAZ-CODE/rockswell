@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createInvoiceForOrder } from "@/lib/invoices"
+import { applyStockMovement, orderItemsToStockLines } from "@/lib/inventory"
 
 type ToolResult = { ok: true; data: unknown } | { ok: false; error: string }
 
@@ -589,6 +590,22 @@ async function approvePendingOrders(
       .single()
     if (!upErr && row) {
       updated += 1
+      try {
+        await applyStockMovement(
+          service,
+          orderItemsToStockLines(
+            (Array.isArray(row.items) ? row.items : []) as Array<{
+              productId: string
+              warehouseId: string
+              quantity: number
+              productName?: string
+            }>
+          ),
+          "commit"
+        )
+      } catch {
+        /* best-effort */
+      }
       try {
         await createInvoiceForOrder(service, row)
       } catch {

@@ -12,7 +12,7 @@ import {
   LayoutDashboard, ShoppingBag, Package,
   FileText, Settings, HelpCircle, LogOut,
   ChevronLeft, MessageSquare, ClipboardList, Percent,
-  ChevronDown, Shield, ExternalLink, Building2,
+  ChevronDown, Shield, ExternalLink, Building2, BarChart3,
 } from "lucide-react"
 
 interface NavItem {
@@ -47,7 +47,7 @@ const customerNav: NavItem[] = [
   { label: "Sepet", icon: <ClipboardList size={20} />, href: "/cart" },
   { label: "Faturalar", icon: <FileText size={20} />, href: "/account/invoices" },
   { label: "Kampanyalar", icon: <Percent size={20} />, href: "/account/campaigns" },
-
+  { label: "Raporlar", icon: <BarChart3 size={20} />, href: "/account/reports" },
   { label: "Destek", icon: <MessageSquare size={20} />, href: "/account/support" },
 ]
 

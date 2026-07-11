@@ -57,7 +57,18 @@ function ProductsContent() {
   const vehicleBrands = [...new Set(products.flatMap(p => p.compatibleVehicles.map(v => v.brand)))]
 
   const filtered = products.filter((p) => {
-    if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase()) && !p.sku.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      const hit =
+        p.name.toLowerCase().includes(q) ||
+        p.sku.toLowerCase().includes(q) ||
+        p.brand.toLowerCase().includes(q) ||
+        p.oemNumbers.some((o) => o.toLowerCase().includes(q)) ||
+        p.compatibleVehicles.some((v) =>
+          v.brand.toLowerCase().includes(q) || v.model.toLowerCase().includes(q)
+        )
+      if (!hit) return false
+    }
     if (selectedBrands.length > 0 && !selectedBrands.includes(p.brand)) return false
     if (selectedCategory && p.category !== selectedCategory) return false
     if (selectedVehicleBrands.length > 0 && !selectedVehicleBrands.some(v => p.compatibleVehicles.some(cv => cv.brand === v))) return false

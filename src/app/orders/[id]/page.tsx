@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useParams, useSearchParams } from "next/navigation"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import toast from "react-hot-toast"
 import { Shell } from "@/components/layout/shell"
@@ -11,11 +11,11 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
-import { getOrderById } from "@/lib/api"
+import { getOrderById, requestOrderReturn } from "@/lib/api"
 import { formatDate, formatPrice, cn } from "@/lib/utils"
 import {
   Package, Truck, CheckCircle, Clock, XCircle, FileText,
-  ArrowLeft, CreditCard, Building2, MapPin, StickyNote,
+  ArrowLeft, CreditCard, Building2, MapPin, StickyNote, RotateCcw,
 } from "lucide-react"
 
 const statusConfig: Record<string, { label: string; color: "default" | "warning" | "info" | "success" | "danger"; icon: typeof Clock }> = {
@@ -45,8 +45,12 @@ const paymentStatusLabels: Record<string, string> = {
 export default function OrderDetailPage() {
   const params = useParams()
   const searchParams = useSearchParams()
+  const router = useRouter()
   const orderId = String(params.id)
-  const { data: order, loading, error } = useData(() => getOrderById(orderId), [orderId])
+  const { data: order, loading, error, refetch } = useData(() => getOrderById(orderId), [orderId])
+  const [returnReason, setReturnReason] = useState("")
+  const [returning, setReturning] = useState(false)
+  const [showReturn, setShowReturn] = useState(false)
 
   useEffect(() => {
     if (searchParams.get("created") === "1") toast.success("Siparişiniz oluşturuldu")
@@ -55,6 +59,25 @@ export default function OrderDetailPage() {
 
   const status = order ? statusConfig[order.status] : null
   const StatusIcon = status?.icon ?? Clock
+
+  const submitReturn = async () => {
+    if (!returnReason.trim()) {
+      toast.error("İade nedeni yazın")
+      return
+    }
+    setReturning(true)
+    try {
+      await requestOrderReturn(orderId, returnReason)
+      toast.success("İade talebiniz alındı")
+      setShowReturn(false)
+      refetch()
+      router.refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "İade oluşturulamadı")
+    } finally {
+      setReturning(false)
+    }
+  }
 
   return (
     <Shell>
@@ -106,9 +129,33 @@ export default function OrderDetailPage() {
                       <Button size="sm" icon={<CreditCard size={14} />}>Ödemeyi Tamamla</Button>
                     </Link>
                   )}
+                  {order.status === "delivered" && (
+                    <Button size="sm" variant="secondary" icon={<RotateCcw size={14} />} onClick={() => setShowReturn((v) => !v)}>
+                      İade Talebi
+                    </Button>
+                  )}
                 </div>
               </div>
             </GlassCard>
+
+            {showReturn && order.status === "delivered" && (
+              <GlassCard intensity="light" className="p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-white">İade talebi</h2>
+                <textarea
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  placeholder="İade nedeninizi yazın…"
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 resize-none"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={submitReturn} disabled={returning}>
+                    {returning ? "Gönderiliyor…" : "Talebi Gönder"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowReturn(false)}>Vazgeç</Button>
+                </div>
+              </GlassCard>
+            )}
 
             {/* Items */}
             <GlassCard intensity="light" className="p-5">

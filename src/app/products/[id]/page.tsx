@@ -380,9 +380,18 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       <span className="text-sm text-white/70">{doc.name}</span>
                       <span className="text-xs text-white/30">{(doc.size / 1024).toFixed(0)} KB</span>
                     </div>
-                    <Button variant="ghost" size="sm" icon={<Download size={14} />} onClick={() => toast.success("Döküman indiriliyor...")} />
+                    <Button variant="ghost" size="sm" icon={<Download size={14} />} onClick={() => {
+                      if (!doc.url) {
+                        toast.error("Dosya bağlantısı yok")
+                        return
+                      }
+                      window.open(doc.url, "_blank", "noopener,noreferrer")
+                    }} />
                   </div>
                 ))}
+                {product.documents.length === 0 && (
+                  <p className="text-sm text-white/30 py-4 text-center">Bu ürün için döküman bulunmuyor.</p>
+                )}
               </div>
             )}
           </CardContent>

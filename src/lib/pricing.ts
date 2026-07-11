@@ -77,7 +77,9 @@ function norm(s: string) {
   return s.trim().toLocaleLowerCase("tr")
 }
 
-/** Whether a product/line matches an active discount campaign. Empty targets = all products. */
+/** Whether a product/line matches an active discount campaign.
+ * `campaign.brands` matches product manufacturer brand OR compatible vehicle brands.
+ */
 export function campaignMatchesProduct(
   campaign: Campaign,
   product: Pick<Product, "category" | "brand" | "compatibleVehicles"> | CartLineForPricing
