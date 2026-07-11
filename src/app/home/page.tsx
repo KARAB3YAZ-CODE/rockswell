@@ -294,19 +294,19 @@ export default function CustomerHomePage() {
           </div>
         </div>
 
-        {/* Welcome + discount + credit — compact */}
+        {/* Welcome + discount + credit — equal padding, content centered */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5 items-stretch">
-          <GlassCard intensity="medium" className="p-3.5 md:col-span-2 relative overflow-hidden">
-            <div className="relative flex items-center gap-3">
+          <GlassCard intensity="medium" className="!p-4 md:col-span-2 relative overflow-hidden flex items-center">
+            <div className="relative w-full flex items-center gap-3">
               <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-accent to-accent/70 flex items-center justify-center text-sm font-bold text-black shadow-md shadow-accent/20">
                 {user ? `${user.name[0]}${user.surname[0]}` : "R"}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] uppercase tracking-wider text-white/35 leading-none mb-0.5">Firma paneli</p>
+                <p className="text-[10px] uppercase tracking-wider text-white/35 leading-none mb-1">Firma paneli</p>
                 <h1 className="text-base font-bold text-white leading-tight m-0 truncate">
                   Hoş geldin, {user?.name ?? "…"}
                 </h1>
-                <div className="flex items-center gap-2 mt-1 flex-wrap min-w-0">
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap min-w-0">
                   <p className="text-xs text-white/50 truncate">{company?.name ?? "—"}</p>
                   <span className="inline-flex items-center gap-1 text-[11px] text-white/40">
                     <span className={cn("w-1.5 h-1.5 rounded-full", user?.isActive ? "bg-success" : "bg-white/30")} />
@@ -319,7 +319,7 @@ export default function CustomerHomePage() {
               </div>
               <Link
                 href="/account"
-                className="shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-lg border border-white/10 text-[11px] font-medium text-white/55 hover:text-white hover:border-accent/30 hover:bg-white/[0.03] transition-colors"
+                className="shrink-0 self-center inline-flex items-center gap-1 h-8 px-3 rounded-lg border border-white/10 text-[11px] font-medium text-white/55 hover:text-white hover:border-accent/30 hover:bg-white/[0.03] transition-colors"
               >
                 Profil
                 <ChevronRight size={12} />
@@ -327,11 +327,11 @@ export default function CustomerHomePage() {
             </div>
           </GlassCard>
 
-          <GlassCard intensity="light" className="p-3.5 relative overflow-hidden border-accent/20">
-            <div className="relative flex items-center justify-between gap-3 h-full">
+          <GlassCard intensity="light" className="!p-4 relative overflow-hidden border-accent/20 flex items-center">
+            <div className="relative w-full flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <span className="text-[10px] font-medium text-white/40 uppercase tracking-wider">İskonto oranınız</span>
-                <p className="text-2xl font-bold text-accent tracking-tight leading-none mt-1">
+                <span className="text-[10px] font-medium text-white/40 uppercase tracking-wider block mb-1.5">İskonto oranınız</span>
+                <p className="text-2xl font-bold text-accent tracking-tight leading-none">
                   %{companyDiscountRate}
                 </p>
               </div>
@@ -339,18 +339,18 @@ export default function CustomerHomePage() {
             </div>
           </GlassCard>
 
-          <GlassCard intensity="light" className="p-3.5 relative overflow-hidden">
-            <div className="relative h-full flex flex-col justify-center">
-              <div className="flex items-center justify-between gap-2">
+          <GlassCard intensity="light" className="!p-4 relative overflow-hidden flex items-center">
+            <div className="relative w-full">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
                 <span className="text-[10px] font-medium text-white/40 uppercase tracking-wider">Kredi limiti</span>
                 <CreditCard size={14} className="text-white/25" />
               </div>
-              <p className="text-lg font-bold text-white leading-none mt-1">{formatPrice(creditLimit)}</p>
-              <div className="flex items-center justify-between mt-1.5 gap-2">
+              <p className="text-lg font-bold text-white leading-none">{formatPrice(creditLimit)}</p>
+              <div className="flex items-center justify-between mt-2 gap-2">
                 <span className="text-[10px] text-white/40 truncate">Kullanılan {formatPrice(creditUsed)}</span>
                 <span className="text-[10px] text-accent font-medium shrink-0">%{Math.round(creditPercent)}</span>
               </div>
-              <div className="relative h-1 bg-white/5 rounded-full mt-1.5 overflow-hidden">
+              <div className="relative h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
                 <motion.div
                   className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-accent to-accent/60"
                   initial={{ width: 0 }}
