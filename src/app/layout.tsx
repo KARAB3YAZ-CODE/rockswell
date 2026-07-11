@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Toaster } from "react-hot-toast"
 import { Providers } from "./providers"
 import "./globals.css"
@@ -14,21 +14,33 @@ export const metadata: Metadata = {
   },
 }
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: "#0E0E0E",
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="tr" className="dark h-full">
-      <body className="min-h-full bg-background text-white antialiased font-sans">
+      <body className="min-h-full bg-background text-white antialiased font-sans overflow-x-hidden">
         <Providers>{children}</Providers>
         <Toaster
-          position="bottom-right"
+          position="bottom-center"
           reverseOrder={false}
           gutter={8}
+          containerStyle={{
+            bottom: "max(16px, env(safe-area-inset-bottom))",
+          }}
           toastOptions={{
             duration: 3000,
             style: {
               borderRadius: "12px",
               padding: "12px 16px",
               fontSize: "14px",
+              maxWidth: "min(420px, calc(100vw - 24px))",
             },
           }}
         />

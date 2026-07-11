@@ -65,7 +65,7 @@ function CompareContent() {
               <Skeleton className="h-4 w-32" />
             </div>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="p-4">
                 <Skeleton className="w-full aspect-square rounded-xl mb-3" />
@@ -124,7 +124,7 @@ function CompareContent() {
         ) : (
           <>
             {/* Product Cards Header */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {compareProducts.slice(0, 4).map((product, i) => {
                 const totalStock = product.stock.reduce((acc, s) => acc + s.available, 0)
                 const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(
@@ -235,7 +235,7 @@ function CompareContent() {
             {/* OEM Comparison */}
             <GlassCard intensity="light" className="p-4">
               <h3 className="text-xs font-semibold text-white/70 uppercase tracking-wider mb-3">OEM Karşılaştırması</h3>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {compareProducts.slice(0, 4).map((product) => (
                   <div key={product.id}>
                     <p className="text-xs text-white/50 mb-2 truncate">{product.name}</p>

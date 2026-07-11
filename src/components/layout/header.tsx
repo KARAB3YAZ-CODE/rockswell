@@ -123,26 +123,29 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-30 h-16 border-b border-border bg-background/80 backdrop-blur-xl">
-      <div className="flex items-center h-full px-4 lg:px-6 gap-4">
+    <header className="sticky top-0 z-30 h-14 sm:h-16 border-b border-border bg-background/80 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
+      <div className="flex items-center h-14 sm:h-16 px-3 sm:px-4 lg:px-6 gap-2 sm:gap-3 min-w-0">
         <button
+          type="button"
           onClick={toggleSidebar}
-          className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 text-white/50 hover:text-white transition-colors"
+          className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center hover:bg-white/5 text-white/50 hover:text-white transition-colors"
+          aria-label="Menü"
         >
-          <Menu size={18} />
+          <Menu size={20} />
         </button>
 
-        <div className="flex-1 max-w-xl">
+        {/* Desktop / tablet search */}
+        <div className="hidden sm:block flex-1 max-w-xl min-w-0">
           <div className="relative">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30 group-focus-within:text-accent transition-colors" />
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setShowSearch(true)}
               onBlur={() => setTimeout(() => setShowSearch(false), 200)}
-              placeholder="Ürün, OEM, VIN, marka veya kategori ara..."
-              className="w-full h-9 pl-10 pr-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all"
+              placeholder="Ürün, OEM, VIN, marka ara…"
+              className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all"
               onKeyDown={(e) => { if (e.key === "Enter" && searchQuery.trim()) { router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`) } }}
             />
             <AnimatePresence>
@@ -152,7 +155,7 @@ export function Header() {
                   initial="hidden"
                   animate="visible"
                   exit="hidden"
-                  className="absolute top-full mt-2 left-0 right-0 bg-card/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl overflow-hidden"
+                  className="absolute top-full mt-2 left-0 right-0 bg-card/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
                 >
                   {searchQuery.length > 0 ? (
                     <SearchPreview query={searchQuery} products={products} />
@@ -165,7 +168,19 @@ export function Header() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Mobile search toggle */}
+        <button
+          type="button"
+          onClick={() => setShowSearch((v) => !v)}
+          className="sm:hidden w-10 h-10 shrink-0 rounded-xl flex items-center justify-center hover:bg-white/5 text-white/50"
+          aria-label="Ara"
+        >
+          <Search size={18} />
+        </button>
+
+        <div className="flex-1 sm:hidden" />
+
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {stats && (
             <div className="hidden lg:flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/5">
               <Wallet size={16} className="text-white/40" />
@@ -194,10 +209,12 @@ export function Header() {
 
           <div className="relative">
             <button
-              onClick={() => setShowQuickOrder(!showQuickOrder)}
-              className="flex items-center gap-1.5 h-9 px-3 rounded-xl hover:bg-white/5 text-white/50 hover:text-white transition-colors"
+              type="button"
+              onClick={() => { setShowQuickOrder(!showQuickOrder); setShowNotifications(false); setShowUserMenu(false) }}
+              className="flex items-center gap-1.5 h-10 w-10 sm:w-auto sm:px-3 justify-center rounded-xl hover:bg-white/5 text-white/50 hover:text-white transition-colors"
+              aria-label="Hızlı sipariş"
             >
-              <Package size={16} />
+              <Package size={18} />
               <span className="hidden lg:block text-xs font-medium">Hızlı Sipariş</span>
             </button>
             <AnimatePresence>
@@ -207,7 +224,7 @@ export function Header() {
                   initial="hidden"
                   animate="visible"
                   exit="hidden"
-                  className="absolute top-full right-0 mt-2 w-[28rem] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+                  className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[calc(3.5rem+env(safe-area-inset-top))] sm:top-full mt-0 sm:mt-2 w-auto sm:w-[min(28rem,calc(100vw-1.5rem))] max-h-[min(80vh,640px)] overflow-y-auto bg-card border border-border rounded-2xl shadow-2xl z-50"
                 >
                   <div className="p-4">
                     <div className="flex items-center gap-2 mb-3">
@@ -421,7 +438,7 @@ export function Header() {
                   initial="hidden"
                   animate="visible"
                   exit="hidden"
-                  className="absolute top-full right-0 mt-2 w-64 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+                  className="absolute top-full right-0 mt-2 w-[min(16rem,calc(100vw-1.5rem))] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
                 >
                   <div className="p-4 border-b border-border">
                     <p className="text-sm font-medium text-white">{user ? `${user.name} ${user.surname}` : "Kullanıcı"}</p>
@@ -473,7 +490,7 @@ export function Header() {
             initial="hidden"
             animate="visible"
             exit="hidden"
-            className="absolute top-full right-4 mt-2 w-96 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-4 top-[calc(3.5rem+env(safe-area-inset-top))] sm:top-full mt-0 sm:mt-2 w-auto sm:w-96 max-w-[calc(100vw-1.5rem)] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
           >
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h3 className="text-sm font-semibold text-white">Bildirimler</h3>
@@ -523,6 +540,51 @@ export function Header() {
                   {!n.read && <div className="w-1.5 h-1.5 rounded-full bg-accent mt-2 shrink-0" />}
                 </div>
               ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile search sheet */}
+      <AnimatePresence>
+        {showSearch && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="sm:hidden overflow-hidden border-t border-border bg-background"
+          >
+            <div className="p-3 space-y-2">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                <input
+                  autoFocus
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Ürün, OEM, VIN ara…"
+                  className="w-full h-11 pl-10 pr-10 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && searchQuery.trim()) {
+                      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`)
+                      setShowSearch(false)
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSearch(false)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-white/40"
+                  aria-label="Kapat"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              {searchQuery.length > 0 && (
+                <div className="rounded-xl border border-border bg-card overflow-hidden max-h-64 overflow-y-auto">
+                  <SearchPreview query={searchQuery} products={products} />
+                </div>
+              )}
             </div>
           </motion.div>
         )}

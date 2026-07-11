@@ -645,7 +645,7 @@ export default function CustomerHomePage() {
 
             {/* Quick Actions (shown when empty) */}
             {!quickSearch && batchItems.length === 0 && (
-              <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
                 {quickActions.map((action) => {
                   const Icon = action.icon
                   return (

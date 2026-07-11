@@ -86,15 +86,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     <Shell>
       <div className="space-y-6">
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm">
-          <Link href="/products" className="text-white/30 hover:text-white/60 transition-colors flex items-center gap-1">
+        <div className="flex items-center gap-2 text-sm min-w-0 overflow-hidden">
+          <Link href="/products" className="text-white/30 hover:text-white/60 transition-colors flex items-center gap-1 shrink-0">
             <ChevronLeft size={14} />
             Ürünler
           </Link>
-          <span className="text-white/20">/</span>
-          <span className="text-white/60">{product.category}</span>
-          <span className="text-white/20">/</span>
-          <span className="text-white/80">{product.name}</span>
+          <span className="text-white/20 shrink-0">/</span>
+          <span className="text-white/60 truncate shrink-0 max-w-[30%]">{product.category}</span>
+          <span className="text-white/20 shrink-0">/</span>
+          <span className="text-white/80 truncate">{product.name}</span>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8">
@@ -293,13 +293,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-border">
-          <div className="flex gap-0">
+        <div className="border-b border-border overflow-x-auto">
+          <div className="flex gap-0 min-w-max">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`px-5 py-3 text-sm font-medium transition-all border-b-2 -mb-[1px] ${
+                className={`px-4 sm:px-5 py-3 text-sm font-medium transition-all border-b-2 -mb-[1px] whitespace-nowrap ${
                   activeTab === tab.key
                     ? "text-accent border-accent"
                     : "text-white/40 hover:text-white/70 border-transparent"

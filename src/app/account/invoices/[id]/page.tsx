@@ -54,11 +54,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   return (
     <Shell>
       <div className="max-w-3xl space-y-4 print:max-w-none">
-        <div className="flex items-center justify-between gap-3 print:hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
           <Link href="/account/invoices" className="inline-flex items-center gap-1.5 text-sm text-white/40 hover:text-white">
             <ArrowLeft size={14} /> Faturalar
           </Link>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {inv.orderId && (
               <Link href={`/orders/${inv.orderId}`}>
                 <Button size="sm" variant="secondary">Sipariş</Button>
@@ -105,7 +105,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             )}
           </div>
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto -mx-1 px-1">
+          <table className="w-full text-sm min-w-[480px]">
             <thead>
               <tr className="border-b border-white/10 print:border-black/20 text-left text-white/40 print:text-black/50">
                 <th className="py-2 font-medium">Açıklama</th>
@@ -125,6 +126,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               ))}
             </tbody>
           </table>
+          </div>
 
           <div className="space-y-1.5 text-sm max-w-xs ml-auto">
             <div className="flex justify-between text-white/50 print:text-black/60">

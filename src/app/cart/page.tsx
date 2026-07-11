@@ -216,7 +216,8 @@ export default function CartPage() {
                   exit={{ opacity: 0, x: 10 }}
                 >
                   <GlassCard intensity="light" className="p-4">
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
                       <div className="w-16 h-16 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center shrink-0 overflow-hidden">
                         {item.image ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -226,7 +227,7 @@ export default function CartPage() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant="premium" size="sm">{item.brand}</Badge>
                           <span className="text-[10px] text-white/30 font-mono">{item.sku}</span>
                           {item.priceLocked && (
@@ -234,7 +235,7 @@ export default function CartPage() {
                           )}
                         </div>
                         <Link href={`/products/${item.productId}`}>
-                          <h3 className="text-sm font-medium text-white mt-0.5 hover:text-accent transition-colors">{item.productName}</h3>
+                          <h3 className="text-sm font-medium text-white mt-0.5 hover:text-accent transition-colors line-clamp-2">{item.productName}</h3>
                         </Link>
                         <p className="text-xs text-white/40 mt-0.5">{formatPrice(item.unitPrice)} / adet</p>
                         {(item.warehouseOptions?.length ?? 0) > 0 ? (
@@ -243,7 +244,7 @@ export default function CartPage() {
                             <select
                               value={item.warehouseId}
                               onChange={(e) => setItemWarehouse(item.productId, item.warehouseId, e.target.value)}
-                              className="text-[11px] bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-white/70 max-w-[200px]"
+                              className="text-[11px] bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white/70 max-w-full sm:max-w-[200px]"
                             >
                               {item.warehouseOptions!.map((w) => (
                                 <option key={w.warehouseId} value={w.warehouseId} className="bg-card">
@@ -258,30 +259,33 @@ export default function CartPage() {
                           </p>
                         ) : null}
                       </div>
-                      <div className="text-right shrink-0">
+                      </div>
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pl-0 sm:pl-0">
+                      <div className="text-left sm:text-right">
                         <div className="flex items-center border border-white/10 rounded-lg overflow-hidden">
                           <button
                             onClick={() => updateQuantity(item.productId, item.quantity - 1, item.warehouseId)}
-                            className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                            className="w-10 h-10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors"
                           >
-                            <Minus size={12} />
+                            <Minus size={14} />
                           </button>
                           <span className="w-10 text-center text-xs font-medium text-white">{item.quantity}</span>
                           <button
                             onClick={() => updateQuantity(item.productId, item.quantity + 1, item.warehouseId)}
-                            className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                            className="w-10 h-10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors"
                           >
-                            <Plus size={12} />
+                            <Plus size={14} />
                           </button>
                         </div>
                         <p className="text-sm font-bold text-white mt-2">{formatPrice(item.unitPrice * item.quantity)}</p>
                       </div>
                       <button
                         onClick={() => removeItem(item.productId, item.warehouseId)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-white/20 hover:text-danger hover:bg-danger/5 transition-colors shrink-0"
+                        className="w-10 h-10 rounded-lg flex items-center justify-center text-white/20 hover:text-danger hover:bg-danger/5 transition-colors shrink-0"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={16} />
                       </button>
+                      </div>
                     </div>
                   </GlassCard>
                 </motion.div>

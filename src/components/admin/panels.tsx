@@ -202,7 +202,7 @@ export function AdminOverview() {
               <p className="text-sm text-white/40">Henüz sipariş bulunmuyor</p>
             </div>
           ) : (
-            <div className="overflow-hidden">
+            <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/5">

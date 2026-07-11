@@ -117,7 +117,7 @@ function ProductsContent() {
             <h1 className="text-2xl font-bold text-white">Ürün Kataloğu</h1>
             <p className="text-sm text-white/40">{filtered.length} ürün bulundu</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
             <Button
               variant="ghost"
               size="sm"
@@ -168,17 +168,35 @@ function ProductsContent() {
           />
         </div>
 
-        <div className="flex gap-6">
-          {/* Filters Sidebar */}
+        <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+          {/* Filters — desktop aside / mobile sheet */}
           <AnimatePresence>
             {showFilters && (
-              <motion.aside
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 260 }}
-                exit={{ opacity: 0, width: 0 }}
-                className="shrink-0 overflow-hidden"
-              >
-                <div className="w-[260px] space-y-4">
+              <>
+                <motion.button
+                  type="button"
+                  aria-label="Filtreleri kapat"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+                  onClick={() => setShowFilters(false)}
+                />
+                <motion.aside
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className={cn(
+                    "z-50 shrink-0",
+                    "fixed lg:static inset-y-0 left-0 w-[min(300px,88vw)] lg:w-[260px]",
+                    "overflow-y-auto overscroll-contain bg-background lg:bg-transparent p-4 lg:p-0 border-r border-border lg:border-0 shadow-2xl lg:shadow-none"
+                  )}
+                >
+                <div className="w-full space-y-4">
+                  <div className="flex items-center justify-between lg:hidden mb-2">
+                    <h2 className="text-sm font-semibold text-white">Filtreler</h2>
+                    <button type="button" onClick={() => setShowFilters(false)} className="text-xs text-accent">Kapat</button>
+                  </div>
                   <GlassCard intensity="light" className="p-4">
                     <h3 className="text-xs font-semibold text-white/70 uppercase tracking-wider mb-3">Kategori</h3>
                     <div className="space-y-1">
@@ -248,6 +266,7 @@ function ProductsContent() {
                   </GlassCard>
                 </div>
               </motion.aside>
+              </>
             )}
           </AnimatePresence>
 
@@ -380,10 +399,11 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
   if (viewMode === "list") {
     return (
       <Link href={`/products/${product.id}`} className="block">
-        <div className="flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:bg-card-hover transition-all group">
+        <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-2xl bg-card border border-border hover:bg-card-hover transition-all group flex-col sm:flex-row">
+          <div className="flex items-center gap-3 w-full sm:w-auto min-w-0 flex-1">
           <div className="w-16 h-16 rounded-xl bg-card shrink-0 border border-white/5 overflow-hidden bg-contain bg-center bg-no-repeat p-1.5" style={{ backgroundImage: `url(${product.images[0]})` }} />
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-white/30 font-mono">{product.sku}</span>
               <Badge size="sm" variant="premium">{product.brand}</Badge>
               {product.compatibleVehicles.slice(0, 3).map((v) => (
@@ -397,7 +417,7 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
               )}
             </div>
             <h3 className="text-sm font-medium text-white mt-0.5 truncate">{product.name}</h3>
-            <div className="flex items-center gap-3 mt-0.5">
+            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
               <p className="text-sm font-semibold text-accent">{formatPrice(dealerPrice)}</p>
               {!product.customerPriceApplied && (
                 <>
@@ -410,7 +430,9 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
               )}
             </div>
           </div>
-          <div className="text-right shrink-0 space-y-1">
+          </div>
+          <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto shrink-0">
+          <div className="text-left sm:text-right space-y-1">
             <p className="text-xs text-white/30">Min: {product.minOrderQuantity} adet</p>
             <p className={cn("text-xs font-medium", totalStock >= 10 ? "text-success" : "text-warning")}>
               {totalStock >= 10 ? "Stokta" : "Sınırlı Stok"} ({totalStock})
@@ -419,7 +441,7 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
           <button
             type="button"
             onClick={toggleCompare}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors ${
+            className={`w-10 h-10 rounded-lg flex items-center justify-center border transition-colors ${
               inCompare ? "border-accent/40 text-accent bg-accent/10" : "border-white/10 text-white/40 hover:text-white"
             }`}
             title="Karşılaştır"
@@ -427,6 +449,7 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
             <GitCompare size={14} />
           </button>
           <Button size="sm" onClick={(e) => { e.preventDefault(); onAddToCart() }} icon={<Plus size={14} />} />
+          </div>
         </div>
       </Link>
     )

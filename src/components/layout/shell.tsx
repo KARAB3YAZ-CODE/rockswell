@@ -112,7 +112,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div
         className={cn(
-          "flex flex-col min-h-screen transition-all duration-300",
+          "flex flex-col min-h-screen transition-all duration-300 w-full min-w-0",
           sidebarOpen ? "lg:ml-[240px]" : "lg:ml-[72px]"
         )}
       >
@@ -125,13 +125,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Bakım modu açık — firmalar mağazayı göremez. Siz admin olarak erişiyorsunuz.
           </div>
         )}
-        <main className="flex-1 p-4 lg:p-6">{children}</main>
-        <footer className="px-4 lg:px-6 pb-4 pt-1">
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 min-w-0 overflow-x-hidden">{children}</main>
+        <footer className="px-3 sm:px-4 lg:px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-1">
           <a
             href="https://karabeyaz.net"
             target="_blank"
             rel="noopener noreferrer"
-            className="group flex items-center justify-center gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 transition-colors hover:border-white/10 hover:bg-white/[0.04]"
+            className="group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 transition-colors hover:border-white/10 hover:bg-white/[0.04]"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
