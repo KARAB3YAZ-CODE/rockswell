@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
 import toast from "react-hot-toast"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
@@ -30,7 +29,7 @@ import {
   BarChart3, DollarSign,
   Warehouse as WarehouseIcon, Percent, TrendingUp, Search,
   Eye, Plus, CheckCircle, XCircle, Truck, X,
-  KeyRound, Copy, Check, Pencil, Trash2, Ban, UserPlus, ExternalLink,
+  KeyRound, Copy, Check, Pencil, Trash2, Ban, UserPlus, ChevronRight,
 } from "lucide-react"
 import { ROLE_LABELS } from "@/lib/roles"
 import { siteAbsoluteUrl, adminPath } from "@/lib/admin-host"
@@ -76,12 +75,35 @@ function nextStatusFor(status: Order["status"]): { status: Order["status"]; labe
 export function AdminOverview() {
   const { data: stats, loading } = useData(() => getAdminStats(), [])
   const { orders, loading: ordersLoading } = useOrders()
+  const { data: companies } = useData(() => getAllCompanies(), [])
+
+  const companyNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const c of companies ?? []) map.set(c.id, c.name)
+    return map
+  }, [companies])
+
+  const pendingCount = useMemo(
+    () => orders.filter((o) => o.status === "pending_approval" || o.status === "quotation").length,
+    [orders]
+  )
+  const processingCount = useMemo(
+    () => orders.filter((o) => o.status === "processing" || o.status === "shipped").length,
+    [orders]
+  )
 
   const cards = [
-    { label: "Toplam Kullanıcı", value: stats?.users ?? 0, icon: Users, tone: "info", hint: "Kayıtlı hesaplar" },
-    { label: "Aktif Şirket", value: stats?.companies ?? 0, icon: Building2, tone: "accent", hint: "Bayi & müşteri" },
-    { label: "Toplam Sipariş", value: stats?.orders ?? 0, icon: ShoppingBag, tone: "success", hint: "Tüm zamanlar" },
-    { label: "Ciro", value: stats ? formatPrice(stats.revenue) : "—", icon: DollarSign, tone: "warning", hint: "Toplam gelir" },
+    { label: "Toplam Kullanıcı", value: stats?.users ?? 0, icon: Users, tone: "info", hint: "Kayıtlı hesaplar", href: adminPath("/users") },
+    { label: "Aktif Şirket", value: stats?.companies ?? 0, icon: Building2, tone: "accent", hint: "Bayi & müşteri", href: adminPath("/companies") },
+    { label: "Toplam Sipariş", value: stats?.orders ?? 0, icon: ShoppingBag, tone: "success", hint: "Tüm zamanlar", href: adminPath("/orders") },
+    { label: "Ciro", value: stats ? formatPrice(stats.revenue) : "—", icon: DollarSign, tone: "warning", hint: "Toplam gelir", href: adminPath("/reports") },
+  ]
+
+  const quick = [
+    { label: "Onay bekleyen", value: pendingCount, href: `${adminPath("/orders")}?status=pending_approval`, tone: "warning" as const },
+    { label: "Hazırlık / kargo", value: processingCount, href: `${adminPath("/orders")}?status=processing`, tone: "info" as const },
+    { label: "Ürünler", value: "Yönet", href: adminPath("/products"), tone: "accent" as const },
+    { label: "Raporlar", value: "Aç", href: adminPath("/reports"), tone: "success" as const },
   ]
 
   return (
@@ -107,37 +129,63 @@ export function AdminOverview() {
           const Icon = stat.icon
           const s = statStyles[stat.tone]
           return (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              className={cn(
-                "group relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br to-card border border-border transition-all hover:border-white/15 hover:shadow-lg",
-                s.from, s.glow
-              )}
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className={cn("w-10 h-10 rounded-xl border flex items-center justify-center", s.chip)}>
-                  <Icon size={18} />
+            <Link key={stat.label} href={stat.href}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className={cn(
+                  "group relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br to-card border border-border transition-all hover:border-white/15 hover:shadow-lg h-full",
+                  s.from, s.glow
+                )}
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className={cn("w-10 h-10 rounded-xl border flex items-center justify-center", s.chip)}>
+                    <Icon size={18} />
+                  </div>
+                  <TrendingUp size={14} className="text-white/20 group-hover:text-white/40 transition-colors" />
                 </div>
-                <TrendingUp size={14} className="text-white/20 group-hover:text-white/40 transition-colors" />
-              </div>
-              {loading ? (
-                <Skeleton className="h-7 w-24 mb-1" />
-              ) : (
-                <p className="text-2xl font-bold text-white leading-none mb-1">{stat.value}</p>
-              )}
-              <p className="text-xs font-medium text-white/60">{stat.label}</p>
-              <p className="text-[11px] text-white/30 mt-0.5">{stat.hint}</p>
-            </motion.div>
+                {loading ? (
+                  <Skeleton className="h-7 w-24 mb-1" />
+                ) : (
+                  <p className="text-2xl font-bold text-white leading-none mb-1">{stat.value}</p>
+                )}
+                <p className="text-xs font-medium text-white/60">{stat.label}</p>
+                <p className="text-[11px] text-white/30 mt-0.5">{stat.hint}</p>
+              </motion.div>
+            </Link>
           )
         })}
       </div>
 
-      <Card>
-        <CardHeader><CardTitle>Son Siparişler</CardTitle></CardHeader>
-        <CardContent>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {quick.map((q) => (
+          <Link
+            key={q.label}
+            href={q.href}
+            className="rounded-2xl border border-border bg-card/60 p-4 hover:border-accent/30 transition-colors"
+          >
+            <p className="text-[11px] text-white/40 mb-1">{q.label}</p>
+            <p className={cn(
+              "text-lg font-bold",
+              q.tone === "warning" ? "text-warning" :
+              q.tone === "info" ? "text-info" :
+              q.tone === "accent" ? "text-accent" : "text-success"
+            )}>
+              {q.value}
+            </p>
+          </Link>
+        ))}
+      </div>
+
+      <GlassCard intensity="light" className="p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-white">Son Siparişler</h3>
+          <Link href={adminPath("/orders")} className="text-xs text-accent hover:underline inline-flex items-center gap-1">
+            Tüm siparişler <ChevronRight size={12} />
+          </Link>
+        </div>
+        <div className="p-5 pt-2">
           {ordersLoading ? (
             <TableSkeleton rows={5} />
           ) : orders.length === 0 ? (
@@ -151,6 +199,7 @@ export function AdminOverview() {
                 <thead>
                   <tr className="border-b border-white/5">
                     <th className="text-left text-xs font-medium text-white/30 pb-3">Sipariş</th>
+                    <th className="text-left text-xs font-medium text-white/30 pb-3">Firma</th>
                     <th className="text-left text-xs font-medium text-white/30 pb-3">Tarih</th>
                     <th className="text-left text-xs font-medium text-white/30 pb-3">Durum</th>
                     <th className="text-right text-xs font-medium text-white/30 pb-3">Tutar</th>
@@ -161,6 +210,9 @@ export function AdminOverview() {
                     <tr key={order.id} className="border-b border-white/[0.02]">
                       <td className="py-3 text-sm text-white/80">
                         <a href={siteAbsoluteUrl(`/orders/${order.id}`)} className="hover:text-accent">{order.orderNumber}</a>
+                      </td>
+                      <td className="py-3 text-sm text-white/50 truncate max-w-[140px]">
+                        {companyNameById.get(order.companyId) || "—"}
                       </td>
                       <td className="py-3 text-sm text-white/50">{formatDate(order.createdAt)}</td>
                       <td className="py-3">
@@ -175,8 +227,8 @@ export function AdminOverview() {
               </table>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </GlassCard>
     </div>
   )
 }
@@ -832,7 +884,7 @@ export function AdminOrders() {
   const [cancelOrder, setCancelOrder] = useState<Order | null>(null)
   const [delOrder, setDelOrder] = useState<Order | null>(null)
   const [search, setSearch] = useState(searchParams.get("company") ?? "")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get("status") ?? "all")
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const companyNameById = useMemo(() => {
@@ -1104,8 +1156,39 @@ export function missingOrder(o: Order): string[] {
 
 export function AdminWarehouses() {
   const { data: warehouses, loading, refetch } = useData(() => getAllWarehouses(), [])
+  const { data: users } = useData(() => getAllUsers(), [])
   const [form, setForm] = useState<Warehouse | "new" | null>(null)
   const [del, setDel] = useState<Warehouse | null>(null)
+  const [search, setSearch] = useState("")
+  const [status, setStatus] = useState<"all" | "active" | "inactive">("all")
+
+  const managerOptions = useMemo(() => {
+    return (users ?? [])
+      .filter((u) => u.isActive)
+      .map((u) => `${u.name} ${u.surname}`.trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, "tr"))
+  }, [users])
+
+  const cityOptions = useMemo(
+    () => [...new Set((warehouses ?? []).map((w) => w.address?.city?.trim()).filter(Boolean) as string[])],
+    [warehouses]
+  )
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return (warehouses ?? []).filter((wh) => {
+      if (status === "active" && !wh.isActive) return false
+      if (status === "inactive" && wh.isActive) return false
+      if (!q) return true
+      return (
+        wh.name.toLowerCase().includes(q) ||
+        wh.code.toLowerCase().includes(q) ||
+        (wh.manager || "").toLowerCase().includes(q) ||
+        (wh.address?.city || "").toLowerCase().includes(q)
+      )
+    })
+  }, [warehouses, search, status])
 
   return (
     <div className="space-y-4">
@@ -1113,20 +1196,52 @@ export function AdminWarehouses() {
         icon={WarehouseIcon}
         tone="info"
         title="Depo Yönetimi"
-        subtitle={`${warehouses?.length ?? 0} depo`}
+        subtitle={`${filtered.length} / ${warehouses?.length ?? 0} depo`}
         action={<Button size="sm" icon={<Plus size={14} />} onClick={() => setForm("new")}>Yeni Depo</Button>}
       />
+
+      <div className="rounded-2xl border border-border bg-card/60 p-3 flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Ad, kod, sorumlu, şehir ara…"
+            className={cn(inputCls, "pl-9")}
+          />
+        </div>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value as typeof status)}
+          className={cn(inputCls, "sm:w-40 cursor-pointer")}
+        >
+          <option value="all" className="bg-card">Tüm durum</option>
+          <option value="active" className="bg-card">Aktif</option>
+          <option value="inactive" className="bg-card">Pasif</option>
+        </select>
+      </div>
+
       {loading ? (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}
         </div>
       ) : (warehouses?.length ?? 0) === 0 ? (
-        <div className="text-center py-12"><WarehouseIcon size={32} className="mx-auto text-white/20 mb-3" /><p className="text-sm text-white/40">Henüz depo bulunmuyor</p></div>
+        <div className="text-center py-12 rounded-2xl border border-border bg-card/40">
+          <WarehouseIcon size={32} className="mx-auto text-white/20 mb-3" />
+          <p className="text-sm text-white/40 mb-3">Henüz depo bulunmuyor</p>
+          <Button size="sm" icon={<Plus size={14} />} onClick={() => setForm("new")}>Yeni Depo</Button>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 rounded-2xl border border-border bg-card/40">
+          <Search size={32} className="mx-auto text-white/20 mb-3" />
+          <p className="text-sm text-white/40">Filtrelere uyan depo yok</p>
+        </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {warehouses!.map((wh) => {
+          {filtered.map((wh) => {
             const pct = wh.capacity > 0 ? Math.round((wh.usedCapacity / wh.capacity) * 100) : 0
             const missing = wh.manager ? [] : ["sorumlu"]
+            const barColor = pct >= 90 ? "bg-danger" : pct >= 80 ? "bg-warning" : "bg-accent"
             return (
               <GlassCard key={wh.id} intensity="light" className="p-4">
                 <div className="flex items-start justify-between mb-3">
@@ -1140,11 +1255,11 @@ export function AdminWarehouses() {
                 <h3 className="text-base font-semibold text-white flex items-center gap-2">{wh.name}<Warn items={missing} /></h3>
                 <p className="text-xs text-white/40 mt-1">{[wh.address.city, wh.address.district].filter(Boolean).join(" ") || "Konum yok"}</p>
                 <div className="flex items-center justify-between mt-4 text-xs text-white/40">
-                  <span>Kapasite: %{pct}</span>
+                  <span className={cn(pct >= 80 && "text-warning font-medium")}>Kapasite: %{pct}</span>
                   <span>{wh.manager || "—"}</span>
                 </div>
                 <div className="relative h-1.5 bg-white/5 rounded-full mt-2 overflow-hidden">
-                  <div className="absolute left-0 top-0 h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                  <div className={cn("absolute left-0 top-0 h-full rounded-full transition-all", barColor)} style={{ width: `${Math.min(100, pct)}%` }} />
                 </div>
               </GlassCard>
             )
@@ -1153,7 +1268,13 @@ export function AdminWarehouses() {
       )}
 
       {form && (
-        <WarehouseForm warehouse={form === "new" ? null : form} onClose={() => setForm(null)} onSaved={() => { setForm(null); refetch() }} />
+        <WarehouseForm
+          warehouse={form === "new" ? null : form}
+          managerOptions={managerOptions}
+          cityOptions={cityOptions}
+          onClose={() => setForm(null)}
+          onSaved={() => { setForm(null); refetch() }}
+        />
       )}
       {del && (
         <ConfirmDialog
@@ -1176,7 +1297,19 @@ export function AdminWarehouses() {
   )
 }
 
-export function WarehouseForm({ warehouse, onClose, onSaved }: { warehouse: Warehouse | null; onClose: () => void; onSaved: () => void }) {
+export function WarehouseForm({
+  warehouse,
+  managerOptions = [],
+  cityOptions = [],
+  onClose,
+  onSaved,
+}: {
+  warehouse: Warehouse | null
+  managerOptions?: string[]
+  cityOptions?: string[]
+  onClose: () => void
+  onSaved: () => void
+}) {
   const isEdit = !!warehouse
   const [name, setName] = useState(warehouse?.name ?? "")
   const [code, setCode] = useState(warehouse?.code ?? "")
@@ -1184,6 +1317,7 @@ export function WarehouseForm({ warehouse, onClose, onSaved }: { warehouse: Ware
   const [phone, setPhone] = useState(warehouse?.phone ?? "")
   const [workingHours, setWorkingHours] = useState(warehouse?.workingHours ?? "")
   const [capacity, setCapacity] = useState(String(warehouse?.capacity ?? "0"))
+  const [usedCapacity, setUsedCapacity] = useState(String(warehouse?.usedCapacity ?? "0"))
   const [isActive, setIsActive] = useState(warehouse?.isActive ?? true)
   const [address, setAddress] = useState<Address>(warehouse?.address ?? emptyAddress)
   const [saving, setSaving] = useState(false)
@@ -1191,7 +1325,12 @@ export function WarehouseForm({ warehouse, onClose, onSaved }: { warehouse: Ware
   const submit = async () => {
     if (!name.trim() || !code.trim()) { toast.error("Ad ve kod gerekli"); return }
     setSaving(true)
-    const input: WarehouseInput = { name, code, manager, phone, workingHours, capacity: Number(capacity) || 0, isActive, address }
+    const input: WarehouseInput = {
+      name, code, manager, phone, workingHours,
+      capacity: Number(capacity) || 0,
+      usedCapacity: Number(usedCapacity) || 0,
+      isActive, address,
+    }
     try {
       if (isEdit && warehouse) { await updateWarehouse(warehouse.id, input); toast.success("Depo güncellendi") }
       else { await createWarehouse(input); toast.success("Depo oluşturuldu") }
@@ -1203,17 +1342,33 @@ export function WarehouseForm({ warehouse, onClose, onSaved }: { warehouse: Ware
     }
   }
 
+  const managers = useMemo(
+    () => [...new Set([...managerOptions, manager].filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr")),
+    [managerOptions, manager]
+  )
+
   return (
     <Modal title={isEdit ? "Depoyu Düzenle" : "Yeni Depo"} icon={WarehouseIcon} size="lg" onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Depo Adı"><input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} /></Field>
         <Field label="Kod"><input value={code} onChange={(e) => setCode(e.target.value)} className={inputCls} /></Field>
-        <Field label="Sorumlu"><input value={manager} onChange={(e) => setManager(e.target.value)} className={inputCls} /></Field>
+        <Field label="Sorumlu">
+          <select value={manager} onChange={(e) => setManager(e.target.value)} className={cn(inputCls, "cursor-pointer")}>
+            <option value="" className="bg-card">Seçin veya aşağıya yazın…</option>
+            {managers.map((m) => (
+              <option key={m} value={m} className="bg-card">{m}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Sorumlu (serbest)">
+          <input value={manager} onChange={(e) => setManager(e.target.value)} placeholder="Listede yoksa yazın" className={inputCls} />
+        </Field>
         <Field label="Telefon"><input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} /></Field>
         <Field label="Çalışma Saatleri"><input value={workingHours} onChange={(e) => setWorkingHours(e.target.value)} className={inputCls} /></Field>
         <Field label="Kapasite"><input type="number" value={capacity} onChange={(e) => setCapacity(e.target.value)} className={inputCls} /></Field>
+        <Field label="Kullanılan"><input type="number" value={usedCapacity} onChange={(e) => setUsedCapacity(e.target.value)} className={inputCls} /></Field>
       </div>
-      <AddressFields value={address} onChange={setAddress} />
+      <AddressFields value={address} onChange={setAddress} cityOptions={cityOptions} />
       <Toggle checked={isActive} onChange={setIsActive} label="Depo aktif" />
       <Button className="w-full" onClick={submit} disabled={saving}>{saving ? "Kaydediliyor..." : isEdit ? "Kaydet" : "Oluştur"}</Button>
     </Modal>

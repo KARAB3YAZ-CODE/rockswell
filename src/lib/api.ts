@@ -1050,6 +1050,7 @@ export interface WarehouseInput {
   phone: string
   workingHours: string
   capacity: number
+  usedCapacity?: number
   isActive: boolean
   address: Address
 }
@@ -1062,6 +1063,7 @@ function warehouseRow(input: WarehouseInput) {
     phone: input.phone,
     working_hours: input.workingHours,
     capacity: input.capacity,
+    used_capacity: input.usedCapacity ?? 0,
     is_active: input.isActive,
     address: input.address,
   }
@@ -1182,7 +1184,7 @@ export interface AdminReportSummary {
 
 const PAID_STATUSES = ["confirmed", "processing", "shipped", "delivered"]
 
-export async function getAdminReports(): Promise<AdminReportSummary> {
+export async function getAdminReports(range: "all" | "30" | "90" | "month" = "all"): Promise<AdminReportSummary> {
   await requireAuth()
   const [{ data: orders }, { data: companies }] = await Promise.all([
     supabase.from("orders").select("id, company_id, status, pricing, created_at"),
@@ -1205,6 +1207,13 @@ export async function getAdminReports(): Promise<AdminReportSummary> {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const day30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const day90 = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+  const rangeStart =
+    range === "month" ? monthStart :
+    range === "30" ? day30 :
+    range === "90" ? day90 :
+    null
+
   const trendMap = new Map<string, { revenue: number; orders: number }>()
 
   for (let i = 5; i >= 0; i--) {
@@ -1213,21 +1222,15 @@ export async function getAdminReports(): Promise<AdminReportSummary> {
     trendMap.set(key, { revenue: 0, orders: 0 })
   }
 
-  for (const row of orders ?? []) {
-    const status = String(row.status)
-    byStatusMap.set(status, (byStatusMap.get(status) ?? 0) + 1)
-    if (status === "pending_approval") pendingApproval += 1
-    if (status === "cancelled") cancelledCount += 1
-    if (status === "quotation" || status === "draft") quotationCount += 1
+  let scopedOrderCount = 0
 
+  for (const row of orders ?? []) {
+    const created = new Date(String(row.created_at))
+    const status = String(row.status)
     const total = Number((row.pricing as { grandTotal?: number } | null)?.grandTotal ?? 0)
     const isPaid = PAID_STATUSES.includes(status)
-    if (isPaid) {
-      revenue += total
-      paidOrders += 1
-    }
 
-    const created = new Date(String(row.created_at))
+    // Always keep monthly / 30d / trend for secondary cards
     if (created >= monthStart) {
       monthlyOrders += 1
       if (isPaid) monthlyRevenue += total
@@ -1236,12 +1239,24 @@ export async function getAdminReports(): Promise<AdminReportSummary> {
       last30DaysOrders += 1
       if (isPaid) last30DaysRevenue += total
     }
-
     const trendKey = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, "0")}`
     const trend = trendMap.get(trendKey)
     if (trend) {
       trend.orders += 1
       if (isPaid) trend.revenue += total
+    }
+
+    if (rangeStart && created < rangeStart) continue
+
+    scopedOrderCount += 1
+    byStatusMap.set(status, (byStatusMap.get(status) ?? 0) + 1)
+    if (status === "pending_approval") pendingApproval += 1
+    if (status === "cancelled") cancelledCount += 1
+    if (status === "quotation" || status === "draft") quotationCount += 1
+
+    if (isPaid) {
+      revenue += total
+      paidOrders += 1
     }
 
     const cid = String(row.company_id)
@@ -1251,7 +1266,6 @@ export async function getAdminReports(): Promise<AdminReportSummary> {
     byCompanyMap.set(cid, cur)
   }
 
-  const orderCount = orders?.length ?? 0
   const byCompany = [...byCompanyMap.entries()]
     .map(([companyId, v]) => ({
       companyId,
@@ -1270,7 +1284,7 @@ export async function getAdminReports(): Promise<AdminReportSummary> {
 
   return {
     revenue,
-    orderCount,
+    orderCount: rangeStart ? scopedOrderCount : (orders?.length ?? 0),
     pendingApproval,
     avgOrderValue: paidOrders > 0 ? revenue / paidOrders : 0,
     byCompany,
