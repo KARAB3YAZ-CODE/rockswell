@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState } from "react"
+import { use, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import toast from "react-hot-toast"
 import { Badge } from "@/components/ui/badge"
@@ -8,14 +8,14 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
-import { getOrderById, updateOrderStatus, getAllCompanies } from "@/lib/api"
+import { getOrderById, updateOrderStatus, getAllCompanies, requestOrderReturn } from "@/lib/api"
 import { adminPath } from "@/lib/admin-host"
 import { formatDate, formatPrice, cn } from "@/lib/utils"
 import { orderStatusLabels } from "@/components/admin/ui"
 import type { Order } from "@/lib/types"
 import {
   Package, Truck, CheckCircle, Clock, XCircle, FileText,
-  ArrowLeft, CreditCard, MapPin, StickyNote, Building2,
+  ArrowLeft, CreditCard, MapPin, StickyNote, Building2, RotateCcw, Minus, Plus,
 } from "lucide-react"
 
 const statusIcon: Record<string, typeof Clock> = {
@@ -56,8 +56,6 @@ function nextStatus(status: Order["status"]): { status: Order["status"]; label: 
       return { status: "shipped", label: "Kargola" }
     case "shipped":
       return { status: "delivered", label: "Teslim Et" }
-    case "delivered":
-      return { status: "returned", label: "İade Al" }
     default:
       return null
   }
@@ -68,11 +66,38 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   const { data: order, loading, error, refetch } = useData(() => getOrderById(id), [id])
   const { data: companies } = useData(() => getAllCompanies(), [])
   const [busy, setBusy] = useState(false)
+  const [showReturn, setShowReturn] = useState(false)
+  const [returnReason, setReturnReason] = useState("")
+  const [returnQty, setReturnQty] = useState<Record<string, number>>({})
 
   const companyName = companies?.find((c) => c.id === order?.companyId)?.name ?? "—"
   const next = order ? nextStatus(order.status) : null
   const StatusIcon = statusIcon[order?.status ?? ""] ?? Clock
   const color = statusColor[order?.status ?? ""] ?? "default"
+
+  const returnableItems = useMemo(() => {
+    if (!order) return []
+    return order.items
+      .map((item) => {
+        const returned = Number(item.returnedQuantity ?? 0)
+        const max = Math.max(0, item.quantity - returned)
+        return { ...item, returned, max }
+      })
+      .filter((i) => i.max > 0)
+  }, [order])
+
+  const canReturn = order?.status === "delivered" && returnableItems.length > 0
+
+  useEffect(() => {
+    if (!showReturn || !order) return
+    const init: Record<string, number> = {}
+    for (const item of order.items) {
+      const max = Math.max(0, item.quantity - Number(item.returnedQuantity ?? 0))
+      if (max > 0) init[item.productId] = 0
+    }
+    setReturnQty(init)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showReturn, order?.id])
 
   const runStatus = async (status: Order["status"], label: string) => {
     setBusy(true)
@@ -82,6 +107,36 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
       refetch()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Güncellenemedi")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const setQty = (productId: string, qty: number, max: number) => {
+    setReturnQty((prev) => ({ ...prev, [productId]: Math.min(max, Math.max(0, qty)) }))
+  }
+
+  const submitReturn = async () => {
+    if (!returnReason.trim()) {
+      toast.error("İade nedeni yazın")
+      return
+    }
+    const lines = Object.entries(returnQty)
+      .filter(([, q]) => q > 0)
+      .map(([productId, quantity]) => ({ productId, quantity }))
+    if (!lines.length) {
+      toast.error("İade edilecek ürün adedi seçin")
+      return
+    }
+    setBusy(true)
+    try {
+      await requestOrderReturn(id, returnReason, lines)
+      toast.success("İade kaydedildi")
+      setShowReturn(false)
+      setReturnReason("")
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "İade oluşturulamadı")
     } finally {
       setBusy(false)
     }
@@ -146,6 +201,11 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                     {next.label}
                   </Button>
                 )}
+                {canReturn && (
+                  <Button size="sm" variant="secondary" disabled={busy} icon={<RotateCcw size={14} />} onClick={() => setShowReturn((v) => !v)}>
+                    İade Al
+                  </Button>
+                )}
                 {!["cancelled", "returned", "delivered"].includes(order.status) && (
                   <Button
                     size="sm"
@@ -160,30 +220,96 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
             </div>
           </GlassCard>
 
+          {showReturn && canReturn && (
+            <GlassCard intensity="light" className="p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Kısmi / tam iade</h2>
+                <p className="text-xs text-white/40 mt-1">Satır bazında adet seçin — örn. yalnızca Volvo ürünlerini iade.</p>
+              </div>
+              <div className="space-y-2">
+                {returnableItems.map((item) => (
+                  <div key={item.productId} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white truncate">{item.productName}</p>
+                      <p className="text-[10px] text-white/30 font-mono">
+                        {item.brand} · sipariş {item.quantity}
+                        {item.returned > 0 ? ` · iade ${item.returned}` : ""} · kalan {item.max}
+                      </p>
+                    </div>
+                    <div className="flex items-center border border-white/10 rounded-lg overflow-hidden shrink-0">
+                      <button type="button" onClick={() => setQty(item.productId, (returnQty[item.productId] ?? 0) - 1, item.max)} className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5">
+                        <Minus size={12} />
+                      </button>
+                      <span className="w-10 text-center text-xs font-medium text-white">{returnQty[item.productId] ?? 0}</span>
+                      <button type="button" onClick={() => setQty(item.productId, (returnQty[item.productId] ?? 0) + 1, item.max)} className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5">
+                        <Plus size={12} />
+                      </button>
+                    </div>
+                    <button type="button" onClick={() => setQty(item.productId, item.max, item.max)} className="text-[10px] text-accent hover:underline shrink-0">
+                      Tümü
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <textarea
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                placeholder="İade nedeni…"
+                rows={2}
+                className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 resize-none"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={submitReturn} disabled={busy}>{busy ? "…" : "İadeyi Kaydet"}</Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowReturn(false)}>Vazgeç</Button>
+              </div>
+            </GlassCard>
+          )}
+
           <GlassCard intensity="light" className="p-5">
             <h2 className="text-sm font-semibold text-white mb-3">Ürünler ({order.items.length})</h2>
             <div className="space-y-2">
-              {order.items.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
-                  <div className="w-10 h-10 rounded-lg bg-white/[0.03] flex items-center justify-center shrink-0">
-                    <Package size={18} className="text-white/20" />
+              {order.items.map((item, idx) => {
+                const returned = Number(item.returnedQuantity ?? 0)
+                return (
+                  <div key={idx} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
+                    <div className="w-10 h-10 rounded-lg bg-white/[0.03] flex items-center justify-center shrink-0">
+                      <Package size={18} className="text-white/20" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white truncate">{item.productName}</p>
+                      <p className="text-[10px] text-white/30 font-mono">
+                        {item.sku} · {item.brand}
+                      </p>
+                      {returned > 0 && (
+                        <Badge variant="warning" size="sm" className="mt-1">İade: {returned}/{item.quantity}</Badge>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs text-white/40">
+                        {item.quantity} × {formatPrice(item.unitPrice)}
+                      </p>
+                      <p className="text-sm font-semibold text-white">{formatPrice(item.totalPrice)}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate">{item.productName}</p>
-                    <p className="text-[10px] text-white/30 font-mono">
-                      {item.sku} · {item.brand}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs text-white/40">
-                      {item.quantity} × {formatPrice(item.unitPrice)}
-                    </p>
-                    <p className="text-sm font-semibold text-white">{formatPrice(item.totalPrice)}</p>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </GlassCard>
+
+          {(order.returns?.length ?? 0) > 0 && (
+            <GlassCard intensity="light" className="p-5 space-y-3">
+              <h2 className="text-sm font-semibold text-white">İade geçmişi</h2>
+              {order.returns.map((r) => (
+                <div key={r.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3 space-y-1">
+                  <p className="text-xs text-white/40">{formatDate(r.createdAt)}</p>
+                  <p className="text-sm text-white/70">{r.reason}</p>
+                  <p className="text-xs text-white/40">
+                    {r.items.map((i) => `${i.productName} × ${i.quantity}`).join(" · ")}
+                  </p>
+                </div>
+              ))}
+            </GlassCard>
+          )}
 
           <div className="grid sm:grid-cols-2 gap-4">
             <GlassCard intensity="light" className="p-5 space-y-2">

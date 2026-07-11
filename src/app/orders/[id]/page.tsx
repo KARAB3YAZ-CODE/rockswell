@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
@@ -15,7 +15,7 @@ import { getOrderById, requestOrderReturn } from "@/lib/api"
 import { formatDate, formatPrice, cn } from "@/lib/utils"
 import {
   Package, Truck, CheckCircle, Clock, XCircle, FileText,
-  ArrowLeft, CreditCard, Building2, MapPin, StickyNote, RotateCcw,
+  ArrowLeft, CreditCard, MapPin, StickyNote, RotateCcw, Minus, Plus,
 } from "lucide-react"
 
 const statusConfig: Record<string, { label: string; color: "default" | "warning" | "info" | "success" | "danger"; icon: typeof Clock }> = {
@@ -51,25 +51,62 @@ export default function OrderDetailPage() {
   const [returnReason, setReturnReason] = useState("")
   const [returning, setReturning] = useState(false)
   const [showReturn, setShowReturn] = useState(false)
+  const [returnQty, setReturnQty] = useState<Record<string, number>>({})
 
   useEffect(() => {
     if (searchParams.get("created") === "1") toast.success("Siparişiniz oluşturuldu")
     if (searchParams.get("paid") === "1") toast.success("Ödemeniz alındı, siparişiniz onaylandı")
   }, [searchParams])
 
+  const returnableItems = useMemo(() => {
+    if (!order) return []
+    return order.items
+      .map((item) => {
+        const returned = Number(item.returnedQuantity ?? 0)
+        const max = Math.max(0, item.quantity - returned)
+        return { ...item, returned, max }
+      })
+      .filter((i) => i.max > 0)
+  }, [order])
+
+  const canReturn = order?.status === "delivered" && returnableItems.length > 0
+
+  useEffect(() => {
+    if (!showReturn || !order) return
+    const init: Record<string, number> = {}
+    for (const item of order.items) {
+      const max = Math.max(0, item.quantity - Number(item.returnedQuantity ?? 0))
+      if (max > 0) init[item.productId] = 0
+    }
+    setReturnQty(init)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when opening panel / order changes
+  }, [showReturn, order?.id])
+
   const status = order ? statusConfig[order.status] : null
   const StatusIcon = status?.icon ?? Clock
+
+  const setQty = (productId: string, qty: number, max: number) => {
+    setReturnQty((prev) => ({ ...prev, [productId]: Math.min(max, Math.max(0, qty)) }))
+  }
 
   const submitReturn = async () => {
     if (!returnReason.trim()) {
       toast.error("İade nedeni yazın")
       return
     }
+    const lines = Object.entries(returnQty)
+      .filter(([, q]) => q > 0)
+      .map(([productId, quantity]) => ({ productId, quantity }))
+    if (!lines.length) {
+      toast.error("İade edilecek ürün adedi seçin")
+      return
+    }
     setReturning(true)
     try {
-      await requestOrderReturn(orderId, returnReason)
-      toast.success("İade talebiniz alındı")
+      await requestOrderReturn(orderId, returnReason, lines)
+      toast.success("İade kaydı oluşturuldu")
       setShowReturn(false)
+      setReturnReason("")
       refetch()
       router.refresh()
     } catch (e) {
@@ -103,7 +140,6 @@ export default function OrderDetailPage() {
 
         {!loading && order && status && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-            {/* Header */}
             <GlassCard intensity="medium" className="p-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -129,7 +165,7 @@ export default function OrderDetailPage() {
                       <Button size="sm" icon={<CreditCard size={14} />}>Ödemeyi Tamamla</Button>
                     </Link>
                   )}
-                  {order.status === "delivered" && (
+                  {canReturn && (
                     <Button size="sm" variant="secondary" icon={<RotateCcw size={14} />} onClick={() => setShowReturn((v) => !v)}>
                       İade Talebi
                     </Button>
@@ -138,9 +174,49 @@ export default function OrderDetailPage() {
               </div>
             </GlassCard>
 
-            {showReturn && order.status === "delivered" && (
-              <GlassCard intensity="light" className="p-5 space-y-3">
-                <h2 className="text-sm font-semibold text-white">İade talebi</h2>
+            {showReturn && canReturn && (
+              <GlassCard intensity="light" className="p-5 space-y-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Kısmi / tam iade</h2>
+                  <p className="text-xs text-white/40 mt-1">İade etmek istediğiniz ürünlerin adedini seçin. Örn. yalnızca Volvo satırını iade edebilirsiniz.</p>
+                </div>
+                <div className="space-y-2">
+                  {returnableItems.map((item) => (
+                    <div key={item.productId} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white truncate">{item.productName}</p>
+                        <p className="text-[10px] text-white/30 font-mono">
+                          {item.brand} · sipariş {item.quantity}
+                          {item.returned > 0 ? ` · iade edilmiş ${item.returned}` : ""} · kalan {item.max}
+                        </p>
+                      </div>
+                      <div className="flex items-center border border-white/10 rounded-lg overflow-hidden shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setQty(item.productId, (returnQty[item.productId] ?? 0) - 1, item.max)}
+                          className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5"
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <span className="w-10 text-center text-xs font-medium text-white">{returnQty[item.productId] ?? 0}</span>
+                        <button
+                          type="button"
+                          onClick={() => setQty(item.productId, (returnQty[item.productId] ?? 0) + 1, item.max)}
+                          className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setQty(item.productId, item.max, item.max)}
+                        className="text-[10px] text-accent hover:underline shrink-0"
+                      >
+                        Tümü
+                      </button>
+                    </div>
+                  ))}
+                </div>
                 <textarea
                   value={returnReason}
                   onChange={(e) => setReturnReason(e.target.value)}
@@ -150,37 +226,58 @@ export default function OrderDetailPage() {
                 />
                 <div className="flex gap-2">
                   <Button size="sm" onClick={submitReturn} disabled={returning}>
-                    {returning ? "Gönderiliyor…" : "Talebi Gönder"}
+                    {returning ? "Gönderiliyor…" : "İadeyi Onayla"}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setShowReturn(false)}>Vazgeç</Button>
                 </div>
               </GlassCard>
             )}
 
-            {/* Items */}
             <GlassCard intensity="light" className="p-5">
               <h2 className="text-sm font-semibold text-white mb-3">Ürünler ({order.items.length})</h2>
               <div className="space-y-2">
-                {order.items.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
-                    <div className="w-10 h-10 rounded-lg bg-white/[0.03] flex items-center justify-center shrink-0">
-                      <Package size={18} className="text-white/20" />
+                {order.items.map((item, idx) => {
+                  const returned = Number(item.returnedQuantity ?? 0)
+                  return (
+                    <div key={idx} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
+                      <div className="w-10 h-10 rounded-lg bg-white/[0.03] flex items-center justify-center shrink-0">
+                        <Package size={18} className="text-white/20" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white truncate">{item.productName}</p>
+                        <p className="text-[10px] text-white/30 font-mono">{item.sku} • {item.brand}</p>
+                        {returned > 0 && (
+                          <Badge variant="warning" size="sm" className="mt-1">İade: {returned}/{item.quantity}</Badge>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs text-white/40">{item.quantity} × {formatPrice(item.unitPrice)}</p>
+                        <p className="text-sm font-semibold text-white">{formatPrice(item.totalPrice)}</p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white truncate">{item.productName}</p>
-                      <p className="text-[10px] text-white/30 font-mono">{item.sku} • {item.brand}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xs text-white/40">{item.quantity} × {formatPrice(item.unitPrice)}</p>
-                      <p className="text-sm font-semibold text-white">{formatPrice(item.totalPrice)}</p>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </GlassCard>
 
+            {(order.returns?.length ?? 0) > 0 && (
+              <GlassCard intensity="light" className="p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <RotateCcw size={14} className="text-accent" /> İade geçmişi
+                </h2>
+                {order.returns.map((r) => (
+                  <div key={r.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3 space-y-1">
+                    <p className="text-xs text-white/40">{formatDate(r.createdAt)}</p>
+                    <p className="text-sm text-white/70">{r.reason}</p>
+                    <p className="text-xs text-white/40">
+                      {r.items.map((i) => `${i.productName} × ${i.quantity}`).join(" · ")}
+                    </p>
+                  </div>
+                ))}
+              </GlassCard>
+            )}
+
             <div className="grid sm:grid-cols-2 gap-4">
-              {/* Pricing */}
               <GlassCard intensity="light" className="p-5 space-y-2">
                 <h2 className="text-sm font-semibold text-white mb-2">Fiyat Özeti</h2>
                 <Row label="Ara Toplam" value={formatPrice(order.pricing.subtotal)} />
@@ -196,7 +293,6 @@ export default function OrderDetailPage() {
                 </div>
               </GlassCard>
 
-              {/* Payment & Shipping */}
               <div className="space-y-4">
                 <GlassCard intensity="light" className="p-5 space-y-2">
                   <h2 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
@@ -224,7 +320,7 @@ export default function OrderDetailPage() {
                 <h2 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
                   <StickyNote size={14} className="text-accent" /> Sipariş Notu
                 </h2>
-                <p className="text-sm text-white/60">{order.notes}</p>
+                <p className="text-sm text-white/60 whitespace-pre-wrap">{order.notes}</p>
               </GlassCard>
             )}
           </motion.div>

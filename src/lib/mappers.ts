@@ -109,13 +109,17 @@ export function mapCompany(row: Record<string, unknown>, users: User[] = []): Co
 }
 
 export function mapOrder(row: Record<string, unknown>): Order {
+  const rawItems = (row.items as Order["items"]) ?? []
   return {
     id: String(row.id),
     orderNumber: String(row.order_number),
     companyId: String(row.company_id),
     userId: String(row.user_id),
     status: row.status as Order["status"],
-    items: (row.items as Order["items"]) ?? [],
+    items: rawItems.map((item) => ({
+      ...item,
+      returnedQuantity: Number(item.returnedQuantity ?? 0),
+    })),
     pricing: (() => {
       const p = (row.pricing as Order["pricing"]) ?? {
         subtotal: 0,
@@ -140,6 +144,7 @@ export function mapOrder(row: Record<string, unknown>): Order {
     documents: (row.documents as Order["documents"]) ?? [],
     notes: String(row.notes ?? ""),
     approvalFlow: (row.approval_flow as Order["approvalFlow"]) ?? [],
+    returns: (row.returns as Order["returns"]) ?? [],
     createdAt: new Date(String(row.created_at)),
     updatedAt: new Date(String(row.updated_at)),
   }

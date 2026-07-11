@@ -755,7 +755,29 @@ export async function updateOrderStatus(
         await applyStockMovement(supabase, lines, "release")
       }
     } else if (status === "returned" && prev !== "returned") {
-      await applyStockMovement(supabase, lines, "restock")
+      const items = (Array.isArray(data.items) ? data.items : []) as Array<{
+        productId: string
+        warehouseId: string
+        quantity: number
+        returnedQuantity?: number
+        productName?: string
+      }>
+      const remaining = items
+        .map((i) => ({
+          productId: i.productId,
+          warehouseId: i.warehouseId,
+          quantity: Math.max(0, Number(i.quantity) - Number(i.returnedQuantity ?? 0)),
+          productName: i.productName,
+        }))
+        .filter((i) => i.quantity > 0)
+      if (remaining.length) {
+        const restockedItems = items.map((i) => ({
+          ...i,
+          returnedQuantity: Number(i.quantity),
+        }))
+        await supabase.from("orders").update({ items: restockedItems }).eq("id", id)
+        await applyStockMovement(supabase, orderItemsToStockLines(remaining), "restock")
+      }
     }
   } catch {
     /* stock best-effort after status write */
@@ -772,11 +794,16 @@ export async function updateOrderStatus(
   return mapOrder(data)
 }
 
-/** Dealer requests return for a delivered order. */
-export async function requestOrderReturn(id: string, reason: string): Promise<Order> {
+/** Dealer/admin partial or full return for a delivered order. */
+export async function requestOrderReturn(
+  id: string,
+  reason: string,
+  lines: Array<{ productId: string; quantity: number }>
+): Promise<Order> {
   const user = await getCurrentUser()
   const note = reason.trim()
   if (!note) err("İade nedeni gerekli")
+  if (!lines.length) err("İade edilecek ürün seçin")
 
   const { data: existing, error: fetchErr } = await supabase
     .from("orders")
@@ -787,30 +814,87 @@ export async function requestOrderReturn(id: string, reason: string): Promise<Or
   if (user.role !== "admin" && existing.user_id !== user.id && existing.company_id !== user.companyId) {
     err("Bu siparişe erişiminiz yok")
   }
-  if (existing.status !== "delivered") err("Yalnızca teslim edilmiş siparişler iade edilebilir")
+  if (!["delivered", "returned"].includes(String(existing.status))) {
+    err("Yalnızca teslim edilmiş siparişler iade edilebilir")
+  }
 
-  const notes = [String(existing.notes ?? "").trim(), `İade talebi: ${note}`].filter(Boolean).join("\n")
+  const items = (Array.isArray(existing.items) ? existing.items : []) as Array<{
+    productId: string
+    productName: string
+    sku: string
+    brand: string
+    quantity: number
+    returnedQuantity?: number
+    warehouseId: string
+    unitPrice: number
+    discountRate: number
+    totalPrice: number
+    stockLocation: string
+  }>
+
+  const returnLines: Array<{
+    productId: string
+    productName: string
+    sku: string
+    brand: string
+    quantity: number
+    warehouseId: string
+  }> = []
+
+  const nextItems = items.map((item) => {
+    const req = lines.find((l) => l.productId === item.productId)
+    if (!req || req.quantity <= 0) return { ...item, returnedQuantity: Number(item.returnedQuantity ?? 0) }
+    const already = Number(item.returnedQuantity ?? 0)
+    const maxReturnable = Math.max(0, Number(item.quantity) - already)
+    const qty = Math.min(Math.floor(req.quantity), maxReturnable)
+    if (qty <= 0) return { ...item, returnedQuantity: already }
+    returnLines.push({
+      productId: item.productId,
+      productName: item.productName,
+      sku: item.sku,
+      brand: item.brand,
+      quantity: qty,
+      warehouseId: item.warehouseId,
+    })
+    return { ...item, returnedQuantity: already + qty }
+  })
+
+  if (!returnLines.length) err("Seçilen ürünlerde iade edilebilir adet kalmadı")
+
+  const prevReturns = Array.isArray(existing.returns) ? existing.returns : []
+  const newReturn = {
+    id: crypto.randomUUID(),
+    reason: note,
+    createdAt: new Date().toISOString(),
+    createdBy: user.id,
+    items: returnLines,
+  }
+
+  const allReturned = nextItems.every(
+    (i) => Number(i.returnedQuantity ?? 0) >= Number(i.quantity)
+  )
+  const summary = returnLines.map((l) => `${l.productName} × ${l.quantity}`).join(", ")
+  const notes = [String(existing.notes ?? "").trim(), `İade: ${summary} — ${note}`]
+    .filter(Boolean)
+    .join("\n")
+
+  const patch: Record<string, unknown> = {
+    items: nextItems,
+    returns: [...prevReturns, newReturn],
+    notes,
+  }
+  if (allReturned) patch.status = "returned"
+
   const { data, error } = await supabase
     .from("orders")
-    .update({ status: "returned", notes })
+    .update(patch)
     .eq("id", id)
     .select()
     .single()
   if (error || !data) err(error?.message ?? "İade talebi oluşturulamadı")
 
   try {
-    await applyStockMovement(
-      supabase,
-      orderItemsToStockLines(
-        (Array.isArray(data.items) ? data.items : []) as Array<{
-          productId: string
-          warehouseId: string
-          quantity: number
-          productName?: string
-        }>
-      ),
-      "restock"
-    )
+    await applyStockMovement(supabase, orderItemsToStockLines(returnLines), "restock")
   } catch {
     /* best-effort */
   }

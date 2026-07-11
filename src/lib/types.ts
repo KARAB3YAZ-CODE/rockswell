@@ -134,6 +134,7 @@ export interface Order {
   documents: OrderDocument[]
   notes: string
   approvalFlow: ApprovalStep[]
+  returns: OrderReturn[]
   createdAt: Date
   updatedAt: Date
 }
@@ -146,11 +147,30 @@ export interface OrderItem {
   sku: string
   brand: string
   quantity: number
+  /** Cumulative returned qty for this line */
+  returnedQuantity?: number
   unitPrice: number
   discountRate: number
   totalPrice: number
   warehouseId: string
   stockLocation: string
+}
+
+export interface OrderReturnLine {
+  productId: string
+  productName: string
+  sku?: string
+  brand?: string
+  quantity: number
+  warehouseId?: string
+}
+
+export interface OrderReturn {
+  id: string
+  reason: string
+  createdAt: string
+  createdBy?: string
+  items: OrderReturnLine[]
 }
 
 export interface OrderPricing {

@@ -32,7 +32,7 @@ import {
   KeyRound, Copy, Check, Pencil, Trash2, Ban, UserPlus, ChevronRight,
 } from "lucide-react"
 import { ROLE_LABELS } from "@/lib/roles"
-import { siteAbsoluteUrl, adminPath } from "@/lib/admin-host"
+import { adminPath } from "@/lib/admin-host"
 import {
   inputCls, Field, AddressFields, Toggle, Warn, IconBtn, Modal, ConfirmDialog, SectionHeader, statStyles, emptyAddress, orderStatusLabels,
 } from "@/components/admin/ui"
@@ -68,8 +68,6 @@ function nextStatusFor(status: Order["status"]): { status: Order["status"]; labe
       return { status: "shipped", label: "Kargola" }
     case "shipped":
       return { status: "delivered", label: "Teslim Et" }
-    case "delivered":
-      return { status: "returned", label: "İade Al" }
     default:
       return null
   }
