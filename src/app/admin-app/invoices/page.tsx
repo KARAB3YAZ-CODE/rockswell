@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
 import { getAllInvoices, updateInvoiceStatus } from "@/lib/api"
-import { siteAbsoluteUrl, adminPath } from "@/lib/admin-host"
+import { adminPath } from "@/lib/admin-host"
 import { formatPrice, formatDate, cn } from "@/lib/utils"
 import { SectionHeader, inputCls } from "@/components/admin/ui"
 import { FileText, Search, ShoppingBag, CheckCircle2 } from "lucide-react"
@@ -168,9 +168,12 @@ export default function AdminInvoicesPage() {
                 {filtered.map((inv) => (
                   <tr key={inv.id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
                     <td className="p-3 text-sm text-white/80">
-                      <a href={siteAbsoluteUrl(`/orders/${inv.orderId}`)} className="hover:text-accent">
+                      <Link
+                        href={inv.orderId ? adminPath(`/orders/${inv.orderId}`) : adminPath("/orders")}
+                        className="hover:text-accent"
+                      >
                         {inv.invoiceNumber || inv.id.slice(0, 8)}
-                      </a>
+                      </Link>
                     </td>
                     <td className="p-3 text-sm text-white/60">{inv.companyName ?? "—"}</td>
                     <td className="p-3">

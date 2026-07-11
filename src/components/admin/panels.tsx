@@ -212,7 +212,9 @@ export function AdminOverview() {
                   {orders.slice(0, 6).map((order) => (
                     <tr key={order.id} className="border-b border-white/[0.02]">
                       <td className="py-3 text-sm text-white/80">
-                        <a href={siteAbsoluteUrl(`/orders/${order.id}`)} className="hover:text-accent">{order.orderNumber}</a>
+                        <Link href={adminPath(`/orders/${order.id}`)} className="hover:text-accent">
+                          {order.orderNumber}
+                        </Link>
                       </td>
                       <td className="py-3 text-sm text-white/50 truncate max-w-[140px]">
                         {companyNameById.get(order.companyId) || "—"}
@@ -1079,9 +1081,9 @@ export function AdminOrders() {
                         />
                       </td>
                       <td className="p-3 text-sm text-white/80">
-                        <a href={siteAbsoluteUrl(`/orders/${order.id}`)} className="hover:text-accent flex items-center gap-2">
+                        <Link href={adminPath(`/orders/${order.id}`)} className="hover:text-accent flex items-center gap-2">
                           {order.orderNumber}<Warn items={missing} />
-                        </a>
+                        </Link>
                       </td>
                       <td className="p-3 text-sm text-white/55 truncate max-w-[160px]" title={companyName}>{companyName}</td>
                       <td className="p-3 text-sm text-white/50">{formatDate(order.createdAt)}</td>
