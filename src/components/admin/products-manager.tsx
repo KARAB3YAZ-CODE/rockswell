@@ -44,6 +44,19 @@ export function missingProduct(p: Product): string[] {
   return m
 }
 
+function vehicleBrandLabel(p: Product, max = 3): string {
+  const names = [
+    ...new Set(
+      (p.compatibleVehicles ?? [])
+        .map((v) => v.brand?.trim())
+        .filter((b): b is string => Boolean(b))
+    ),
+  ]
+  if (names.length === 0) return ""
+  if (names.length <= max) return names.join(", ")
+  return `${names.slice(0, max).join(", ")} +${names.length - max}`
+}
+
 export function AdminProducts() {
   const { data, loading, refetch } = useData(() => getAllProductsAdmin(), [])
   const products = data ?? []
@@ -71,11 +84,23 @@ export function AdminProducts() {
     return [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "tr"))
   }, [products])
 
-  const brands = useMemo(() => {
+  const vehicleBrands = useMemo(() => {
     const map = new Map<string, number>()
     for (const p of products) {
-      const key = p.brand?.trim() || "Markasız"
-      map.set(key, (map.get(key) ?? 0) + 1)
+      const names = [
+        ...new Set(
+          (p.compatibleVehicles ?? [])
+            .map((v) => v.brand?.trim())
+            .filter((b): b is string => Boolean(b))
+        ),
+      ]
+      if (names.length === 0) {
+        map.set("Uyumluluk yok", (map.get("Uyumluluk yok") ?? 0) + 1)
+        continue
+      }
+      for (const name of names) {
+        map.set(name, (map.get(name) ?? 0) + 1)
+      }
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "tr"))
   }, [products])
@@ -90,15 +115,27 @@ export function AdminProducts() {
         if (cat !== groupValue) return false
       }
       if (browse === "brand" && groupValue) {
-        const brand = p.brand?.trim() || "Markasız"
-        if (brand !== groupValue) return false
+        const names = (p.compatibleVehicles ?? [])
+          .map((v) => v.brand?.trim())
+          .filter(Boolean)
+        if (groupValue === "Uyumluluk yok") {
+          if (names.length > 0) return false
+        } else if (!names.includes(groupValue)) {
+          return false
+        }
       }
       if (!q) return true
+      const vehicleHit = (p.compatibleVehicles ?? []).some(
+        (v) =>
+          v.brand?.toLowerCase().includes(q) ||
+          v.model?.toLowerCase().includes(q)
+      )
       return (
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
         p.brand.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q)
+        p.category.toLowerCase().includes(q) ||
+        vehicleHit
       )
     })
   }, [products, search, status, browse, groupValue])
@@ -175,7 +212,7 @@ export function AdminProducts() {
           [
             { id: "all" as const, label: "Tüm ürünler" },
             { id: "category" as const, label: "Kategori bazlı" },
-            { id: "brand" as const, label: "Marka bazlı" },
+            { id: "brand" as const, label: "Araç markası" },
           ]
         ).map((m) => (
           <button
@@ -200,7 +237,7 @@ export function AdminProducts() {
           <div className="w-full lg:w-[220px] shrink-0 rounded-2xl border border-border bg-card/60 overflow-hidden h-fit max-h-[70vh] flex flex-col">
             <div className="px-3 py-2.5 border-b border-border text-xs text-white/40 font-medium flex items-center gap-1.5">
               <Filter size={12} />
-              {browse === "category" ? "Kategoriler" : "Markalar"}
+              {browse === "category" ? "Kategoriler" : "Araç markaları"}
             </div>
             <div className="overflow-y-auto p-2 space-y-0.5">
               <button
@@ -211,9 +248,9 @@ export function AdminProducts() {
                   !groupValue ? "bg-accent/15 text-accent" : "text-white/55 hover:bg-white/5"
                 )}
               >
-                Tümü ({browse === "category" ? categories.length : brands.length} grup)
+                Tümü ({browse === "category" ? categories.length : vehicleBrands.length} grup)
               </button>
-              {(browse === "category" ? categories : brands).map(([name, count]) => (
+              {(browse === "category" ? categories : vehicleBrands).map(([name, count]) => (
                 <button
                   key={name}
                   type="button"
@@ -240,7 +277,7 @@ export function AdminProducts() {
                 <input
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setPage(0) }}
-                  placeholder="Ad, SKU, marka, kategori ara…"
+                  placeholder="Ad, SKU, araç markası, kategori ara…"
                   className={cn(inputCls, "pl-9")}
                 />
               </div>
@@ -426,7 +463,7 @@ export function AdminProducts() {
                           {product.name}
                         </p>
                         <p className="text-[11px] text-white/40 truncate">
-                          {[product.brand, product.category].filter(Boolean).join(" · ") || "—"}
+                          {[vehicleBrandLabel(product) || product.brand, product.category].filter(Boolean).join(" · ") || "—"}
                         </p>
                       </div>
 
@@ -514,7 +551,7 @@ export function AdminProducts() {
                                   <Warn items={missing} />
                                 </p>
                                 <p className="text-[11px] text-white/35 truncate">
-                                  {product.brand || "—"} · {product.category || "—"}
+                                  {vehicleBrandLabel(product) || product.brand || "—"} · {product.category || "—"}
                                 </p>
                               </div>
                             </div>
