@@ -98,6 +98,7 @@ export async function getCurrentCompany(): Promise<Company> {
         phone: "",
         email: user.email,
         discountRate: DEFAULT_DISCOUNT_RATE,
+        creditLimit: 0,
         users: [user],
       }
       return _currentCompany
@@ -737,6 +738,7 @@ export interface CompanyInput {
   email: string
   address: Address
   discountRate: number
+  creditLimit: number
 }
 
 function companyRow(input: CompanyInput) {
@@ -748,6 +750,7 @@ function companyRow(input: CompanyInput) {
     email: input.email,
     address: input.address,
     discount_rate: resolveDiscountRate(input.discountRate),
+    credit_limit: Math.max(0, Number(input.creditLimit) || 0),
   }
 }
 

@@ -10,32 +10,26 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/effects/glass-card"
-import { useProduct, useProducts } from "@/hooks/use-data"
+import { useProduct, useProducts, useDiscountRate } from "@/hooks/use-data"
 import { useCartStore } from "@/lib/store"
+import { dealerPriceDisplay, TAX_RATE } from "@/lib/pricing"
 import { formatPrice } from "@/lib/utils"
 import {
-  Package, ChevronLeft, Heart, Share2, ShoppingCart,
+  Package, ChevronLeft, Share2, ShoppingCart,
   Truck, Shield, Clock, FileText, Download,
   CheckCircle, AlertTriangle, Minus, Plus, Star,
-  Maximize2,
   Building2,
 } from "lucide-react"
-
-const volumeTiers = [
-  { min: 10, discount: 5, label: "10+ adet" },
-  { min: 50, discount: 10, label: "50+ adet" },
-  { min: 100, discount: 15, label: "100+ adet" },
-]
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { product, loading } = useProduct(id)
   const { products } = useProducts()
+  const { discountRate: companyRate } = useDiscountRate()
   const addItem = useCartStore((s) => s.addItem)
   const [quantity, setQuantity] = useState(1)
   const [selectedImage, setSelectedImage] = useState(0)
   const [activeTab, setActiveTab] = useState<"info" | "specs" | "vehicles" | "docs">("info")
-  const [quickOrderChecked, setQuickOrderChecked] = useState(false)
   const [orderNote, setOrderNote] = useState("")
 
   if (loading) {
@@ -60,13 +54,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   const totalStock = product.stock.reduce((acc, s) => acc + s.available, 0)
   const isInStock = totalStock > 0
-  const listPrice = product.basePrice * 1.25
-  const discountPercent = Math.round((1 - product.basePrice / listPrice) * 100)
-  const kdvAmount = product.basePrice * 0.20
-
-  const activeTier = volumeTiers.filter((t) => quantity >= t.min).pop()
-  const volumeDiscount = activeTier?.discount || 0
-  const effectivePrice = volumeDiscount > 0 ? product.basePrice * (1 - volumeDiscount / 100) : product.basePrice
+  const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(product.basePrice, companyRate)
+  const kdvAmount = dealerPrice * TAX_RATE
 
   const relatedProducts = products
     .filter((p) => p.category === product.category && p.id !== product.id)
@@ -104,14 +93,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 {product.isFeatured && <Badge variant="premium"><Star size={10} /> Öne Çıkan</Badge>}
               </div>
               <div className="absolute top-4 right-4 flex gap-2">
-                <button onClick={() => toast.success("Favorilere eklendi")} className="w-9 h-9 rounded-xl bg-black/60 backdrop-blur-sm flex items-center justify-center text-white/50 hover:text-white transition-colors">
-                  <Heart size={16} />
-                </button>
                 <button onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link kopyalandı") }} className="w-9 h-9 rounded-xl bg-black/60 backdrop-blur-sm flex items-center justify-center text-white/50 hover:text-white transition-colors">
                   <Share2 size={16} />
-                </button>
-                <button onClick={() => toast.success("Tam ekran görünüm")} className="w-9 h-9 rounded-xl bg-black/60 backdrop-blur-sm flex items-center justify-center text-white/50 hover:text-white transition-colors">
-                  <Maximize2 size={16} />
                 </button>
               </div>
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
@@ -158,11 +141,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   <div>
                     <p className="text-xs text-white/40 mb-1">Bayi Fiyatı (KDV Hariç)</p>
                     <div className="flex items-baseline gap-3">
-                      <span className="text-3xl font-bold text-white">{formatPrice(effectivePrice)}</span>
-                      {volumeDiscount > 0 && (
-                        <span className="text-sm text-white/30 line-through">{formatPrice(product.basePrice)}</span>
-                      )}
-                      <Badge variant="success" size="sm">%{discountPercent} İndirim</Badge>
+                      <span className="text-3xl font-bold text-white">{formatPrice(dealerPrice)}</span>
+                      <span className="text-sm text-white/30 line-through">{formatPrice(listPrice)}</span>
+                      <Badge variant="success" size="sm">%{discountRate} İskonto</Badge>
                     </div>
                   </div>
                 </div>
@@ -174,39 +155,17 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div className="flex justify-between py-1">
                     <span className="text-white/40">Bayi Fiyatı</span>
-                    <span className="text-white font-medium">{formatPrice(product.basePrice)}</span>
+                    <span className="text-white font-medium">{formatPrice(dealerPrice)}</span>
                   </div>
                   <div className="flex justify-between py-1">
-                    <span className="text-white/40">İskonto Oranı</span>
-                    <span className="text-success font-medium">%{discountPercent}</span>
+                    <span className="text-white/40">Firma İskontosu</span>
+                    <span className="text-success font-medium">%{discountRate}</span>
                   </div>
                   <div className="flex justify-between py-1">
-                    <span className="text-white/40">KDV (%20)</span>
+                    <span className="text-white/40">KDV (%{TAX_RATE * 100})</span>
                     <span className="text-white/70">{formatPrice(kdvAmount)}</span>
                   </div>
                 </div>
-              </div>
-            </GlassCard>
-
-            {/* Volume Pricing Tiers */}
-            <GlassCard intensity="light" className="p-4">
-              <h4 className="text-xs font-semibold text-white/70 uppercase tracking-wider mb-3">Hacim İndirimi</h4>
-              <div className="grid grid-cols-3 gap-2">
-                {volumeTiers.map((tier) => {
-                  const isActive = quantity >= tier.min
-                  return (
-                    <div
-                      key={tier.min}
-                      className={`p-2.5 rounded-xl border text-center transition-all ${
-                        isActive ? "border-accent/40 bg-accent/5" : "border-white/5 bg-white/[0.02]"
-                      }`}
-                    >
-                      <p className={`text-xs font-semibold ${isActive ? "text-accent" : "text-white/50"}`}>{tier.label}</p>
-                      <p className={`text-sm font-bold mt-0.5 ${isActive ? "text-accent" : "text-white/30"}`}>%{tier.discount}</p>
-                      <p className="text-[10px] text-white/30">ek indirim</p>
-                    </div>
-                  )
-                })}
               </div>
             </GlassCard>
 
@@ -239,8 +198,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       brand: product.brand,
                       image: product.images[0] || "",
                       quantity,
-                      unitPrice: effectivePrice,
-                      totalPrice: effectivePrice * quantity,
+                      unitPrice: product.basePrice,
+                      totalPrice: product.basePrice * quantity,
                       warehouseId: product.stock[0]?.warehouseId || "",
                       minOrderQuantity: product.minOrderQuantity,
                     })
@@ -250,30 +209,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 >
                   Sepete Ekle
                 </Button>
-                <Button variant="ghost" size="lg" icon={<FileText size={18} />} onClick={() => toast.success("Teklif talebiniz alındı, müşteri temsilciniz sizinle iletişime geçecek.")}>
-                  Teklif İste
-                </Button>
-                <Button variant="outline" size="lg" icon={<Heart size={18} />} onClick={() => toast.success("Favorilere eklendi")} />
               </div>
-              {volumeDiscount > 0 && (
-                <p className="text-xs text-accent">
-                  +%{volumeDiscount} hacim indirimi uygulandı. Birim fiyat: {formatPrice(effectivePrice)}
-                </p>
-              )}
+              <p className="text-xs text-white/40">
+                Sepette firma iskontonuz (%{discountRate}) uygulanır. Bayi birim: {formatPrice(dealerPrice)}
+              </p>
             </div>
-
-            {/* Hızlı Sipariş Checkbox */}
-            <label className="flex items-center gap-2.5 px-1 py-1 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={quickOrderChecked}
-                onChange={() => setQuickOrderChecked(!quickOrderChecked)}
-                className="w-4 h-4 rounded border-white/20 bg-white/5 text-accent focus:ring-accent/30"
-              />
-              <span className="text-sm text-white/60 group-hover:text-white transition-colors">
-                Bu ürünü hızlı sipariş listeme ekle
-              </span>
-            </label>
 
             {/* Sipariş Notu */}
             <div className="space-y-1.5">

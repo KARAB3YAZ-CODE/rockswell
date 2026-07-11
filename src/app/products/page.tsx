@@ -12,14 +12,16 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useProducts } from "@/hooks/use-data"
+import { useDiscountRate } from "@/hooks/use-data"
 import { useCartStore } from "@/lib/store"
 import { cn, formatPrice } from "@/lib/utils"
+import { dealerPriceDisplay } from "@/lib/pricing"
 import type { Product } from "@/lib/types"
 import {
   Search, Grid3X3, List, ChevronDown,
-  Heart, Package, Star, Truck,
+  Package, Star, Truck,
   Filter, ChevronLeft, ChevronRight,
-  Plus, FileText,
+  Plus,
 } from "lucide-react"
 
 export default function ProductsPage() {
@@ -316,9 +318,9 @@ function ProductsContent() {
 }
 
 function ProductCard({ product, viewMode, onAddToCart }: { product: Product; viewMode: "grid" | "list"; onAddToCart: () => void }) {
+  const { discountRate: companyRate } = useDiscountRate()
   const totalStock = product.stock.reduce((acc, s) => acc + s.available, 0)
-  const listPrice = product.basePrice * 1.25
-  const discountPercent = Math.round((1 - product.basePrice / listPrice) * 100)
+  const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(product.basePrice, companyRate)
 
   if (viewMode === "list") {
     return (
@@ -341,9 +343,9 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
             </div>
             <h3 className="text-sm font-medium text-white mt-0.5 truncate">{product.name}</h3>
             <div className="flex items-center gap-3 mt-0.5">
-              <p className="text-sm font-semibold text-accent">{formatPrice(product.basePrice)}</p>
+              <p className="text-sm font-semibold text-accent">{formatPrice(dealerPrice)}</p>
               <p className="text-xs text-white/30 line-through">{formatPrice(listPrice)}</p>
-              <Badge variant="success" size="sm">%{discountPercent}</Badge>
+              <Badge variant="success" size="sm">%{discountRate}</Badge>
             </div>
           </div>
           <div className="text-right shrink-0 space-y-1">
@@ -352,12 +354,7 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
               {totalStock >= 10 ? "Stokta" : "Sınırlı Stok"} ({totalStock})
             </p>
           </div>
-          <div className="flex items-center gap-1">
-            <Button size="sm" onClick={(e) => { e.preventDefault(); onAddToCart() }} icon={<Plus size={14} />} />
-            <Button variant="ghost" size="sm" onClick={(e) => { e.preventDefault(); toast.success("Teklif talebiniz alındı, müşteri temsilciniz sizinle iletişime geçecek.") }} icon={<FileText size={14} />}>
-              Teklif İste
-            </Button>
-          </div>
+          <Button size="sm" onClick={(e) => { e.preventDefault(); onAddToCart() }} icon={<Plus size={14} />} />
         </div>
       </Link>
     )
@@ -374,14 +371,8 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
               Öne Çıkan
             </Badge>
           )}
-          <button
-            onClick={(e) => { e.preventDefault(); toast.success("Favorilere eklendi") }}
-            className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/50 backdrop-blur-sm flex items-center justify-center text-white/40 hover:text-danger transition-colors"
-          >
-            <Heart size={14} />
-          </button>
           <Badge variant="success" size="sm" className="absolute bottom-2 left-2">
-            %{discountPercent} İndirim
+            %{discountRate} İskonto
           </Badge>
           <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -413,25 +404,17 @@ function ProductCard({ product, viewMode, onAddToCart }: { product: Product; vie
           <div className="flex items-center justify-between pt-2">
             <div>
               <div className="flex items-baseline gap-1.5">
-                <p className="text-lg font-bold text-accent">{formatPrice(product.basePrice)}</p>
+                <p className="text-lg font-bold text-accent">{formatPrice(dealerPrice)}</p>
                 <span className="text-[10px] text-white/30">Bayi</span>
               </div>
               <p className="text-[11px] text-white/30 line-through">{formatPrice(listPrice)}</p>
             </div>
-            <div className="flex items-center gap-1">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={(e) => { e.preventDefault(); onAddToCart() }}
-                icon={<Plus size={14} />}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => { e.preventDefault(); toast.success("Teklif talebiniz alındı") }}
-                icon={<FileText size={14} />}
-              />
-            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={(e) => { e.preventDefault(); onAddToCart() }}
+              icon={<Plus size={14} />}
+            />
           </div>
         </div>
       </Card>

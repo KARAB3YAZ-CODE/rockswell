@@ -171,3 +171,25 @@ export function useCategories() {
   )
   return { categories: data || [], loading, error, refetch }
 }
+
+/** Live company discount rate from DB (keeps catalog/cart/admin in sync). */
+export function useDiscountRate() {
+  const { data, loading, error, refetch } = useData(
+    () =>
+      import("@/lib/api").then(async (m) => {
+        const { DEFAULT_DISCOUNT_RATE } = await import("@/lib/pricing")
+        try {
+          return await m.getCustomerDiscountRate()
+        } catch {
+          return DEFAULT_DISCOUNT_RATE
+        }
+      }),
+    []
+  )
+  return {
+    discountRate: data ?? 25,
+    loading,
+    error,
+    refetch,
+  }
+}

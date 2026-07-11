@@ -10,7 +10,8 @@ import { GlassCard } from "@/components/effects/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useProducts } from "@/hooks/use-data"
+import { useProducts, useDiscountRate } from "@/hooks/use-data"
+import { dealerPriceDisplay } from "@/lib/pricing"
 import { useCompareStore, useCartStore } from "@/lib/store"
 import { cn, formatPrice } from "@/lib/utils"
 import type { Product } from "@/lib/types"
@@ -46,6 +47,7 @@ function CompareContent() {
   const removeCompareItem = useCompareStore((s) => s.removeItem)
   const clearCompare = useCompareStore((s) => s.clearAll)
   const addItem = useCartStore((s) => s.addItem)
+  const { discountRate: companyRate } = useDiscountRate()
 
   const { products, loading } = useProducts()
   const productIds = ids ? ids.split(",").filter(Boolean) : compareItems
@@ -124,8 +126,7 @@ function CompareContent() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {compareProducts.slice(0, 4).map((product, i) => {
                 const totalStock = product.stock.reduce((acc, s) => acc + s.available, 0)
-                const listPrice = product.basePrice * 1.25
-                const discountPercent = Math.round((1 - product.basePrice / listPrice) * 100)
+                const { listPrice, dealerPrice, discountRate } = dealerPriceDisplay(product.basePrice, companyRate)
                 return (
                   <motion.div
                     key={product.id}
@@ -150,12 +151,12 @@ function CompareContent() {
                         <div className="w-full aspect-square rounded-xl bg-card border border-white/5 overflow-hidden bg-contain bg-center bg-no-repeat mb-3" style={{ backgroundImage: `url(${product.images[0]})` }} />
                         <h3 className="text-sm font-semibold text-white line-clamp-2 leading-snug mb-1">{product.name}</h3>
                         <div className="flex items-baseline gap-1.5 mb-1">
-                          <span className="text-lg font-bold text-accent">{formatPrice(product.basePrice)}</span>
+                          <span className="text-lg font-bold text-accent">{formatPrice(dealerPrice)}</span>
                           <span className="text-[10px] text-white/30">Bayi</span>
                         </div>
                         <p className="text-[11px] text-white/30 line-through mb-2">{formatPrice(listPrice)}</p>
                         <div className="flex items-center gap-2">
-                          <Badge variant="success" size="sm">%{discountPercent}</Badge>
+                          <Badge variant="success" size="sm">%{discountRate}</Badge>
                           <span className={cn("text-[11px] font-medium", totalStock >= 10 ? "text-success" : "text-warning")}>
                             {totalStock >= 10 ? "Stokta" : "Sınırlı Stok"} ({totalStock})
                           </span>
@@ -198,7 +199,10 @@ function CompareContent() {
                       const values = compareProducts.slice(0, 4).map((p) => {
                         if (key === "brand") return p.brand
                         if (key === "sku") return p.sku
-                        if (key === "basePrice") return formatPrice(p.basePrice)
+                        if (key === "basePrice") {
+                          const { dealerPrice } = dealerPriceDisplay(p.basePrice, companyRate)
+                          return formatPrice(dealerPrice)
+                        }
                         if (key === "category") return p.category
                         if (key === "subcategory") return p.subcategory || "—"
                         if (key === "stock") {

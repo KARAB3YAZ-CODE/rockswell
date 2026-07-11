@@ -25,6 +25,22 @@ export function resolveDiscountRate(rate?: number | null): number {
   return Math.min(100, Math.max(0, rate))
 }
 
+/** Liste fiyatından firma iskontolu bayi birim fiyatı. */
+export function dealerUnitPrice(listPrice: number, discountRatePercent?: number | null): number {
+  const rate = resolveDiscountRate(discountRatePercent)
+  return listPrice * (1 - rate / 100)
+}
+
+/** Katalog kartları / ürün detayı için tutarlı fiyat gösterimi. */
+export function dealerPriceDisplay(listPrice: number, discountRatePercent?: number | null) {
+  const discountRate = resolveDiscountRate(discountRatePercent)
+  return {
+    listPrice,
+    dealerPrice: dealerUnitPrice(listPrice, discountRate),
+    discountRate,
+  }
+}
+
 /** Central B2B cart pricing used by both the cart UI and order creation. */
 export function computeCartPricing(subtotal: number, discountRatePercent = DEFAULT_DISCOUNT_RATE): CartPricing {
   const discountRate = resolveDiscountRate(discountRatePercent)

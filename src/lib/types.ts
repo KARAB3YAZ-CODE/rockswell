@@ -10,6 +10,7 @@ export interface Company {
   email: string
   /** Firma bazlı bayi iskonto oranı (yüzde, örn. 25 = %25) */
   discountRate: number
+  creditLimit: number
   users: User[]
 }
 

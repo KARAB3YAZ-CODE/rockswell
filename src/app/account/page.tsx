@@ -6,13 +6,17 @@ import { Badge } from "@/components/ui/badge"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
+import { useDiscountRate } from "@/hooks/use-data"
+import { roleLabel } from "@/lib/roles"
+import { formatPrice } from "@/lib/utils"
 import {
-  User, Building2, FileText, Package,
-  ChevronRight, MapPin, Phone, Mail, Key,
+  Building2, FileText, Package,
+  ChevronRight, MapPin, Phone, Mail, Key, Percent, CreditCard,
 } from "lucide-react"
 
 export default function AccountOverviewPage() {
   const { user, company, loading } = useAuth()
+  const { discountRate } = useDiscountRate()
 
   if (loading) {
     return (
@@ -55,8 +59,8 @@ export default function AccountOverviewPage() {
               <h3 className="text-lg font-semibold text-white">{user.name} {user.surname}</h3>
               <p className="text-sm text-white/50">{user.email}</p>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant="info" size="sm">Satın Alma Yöneticisi</Badge>
-                <Badge variant="success" size="sm">Aktif</Badge>
+                <Badge variant="info" size="sm">{roleLabel(user.role)}</Badge>
+                <Badge variant={user.isActive ? "success" : "default"} size="sm">{user.isActive ? "Aktif" : "Pasif"}</Badge>
               </div>
             </div>
           </div>
@@ -72,6 +76,8 @@ export default function AccountOverviewPage() {
                 { icon: MapPin, label: "Adres", value: `${company.address.street}, ${company.address.district}` },
                 { icon: Phone, label: "Telefon", value: company.phone },
                 { icon: Mail, label: "E-posta", value: company.email },
+                { icon: Percent, label: "İskonto", value: `%${discountRate}` },
+                { icon: CreditCard, label: "Kredi Limiti", value: formatPrice(company.creditLimit) },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-2.5">
                   <item.icon size={14} className="text-white/30 shrink-0" />

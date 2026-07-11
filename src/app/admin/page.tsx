@@ -587,6 +587,10 @@ function AdminCompanies() {
                   <span className="text-accent font-medium">%{c.discountRate}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/40">Kredi Limiti</span>
+                  <span className="text-white/70 font-medium">{formatPrice(c.creditLimit)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
                   <span className="text-white/40">Vergi No</span>
                   <span className="text-white/70 font-mono">{c.taxNumber || "—"}</span>
                 </div>
@@ -643,12 +647,17 @@ function CompanyForm({ company, onClose, onSaved }: { company: Company | null; o
   const [email, setEmail] = useState(company?.email ?? "")
   const [address, setAddress] = useState<Address>(company?.address ?? emptyAddress)
   const [discountRate, setDiscountRate] = useState(String(company?.discountRate ?? 25))
+  const [creditLimit, setCreditLimit] = useState(String(company?.creditLimit ?? 0))
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
     if (!name.trim()) { toast.error("Firma adı gerekli"); return }
     setSaving(true)
-    const input: CompanyInput = { name, taxNumber, taxOffice, phone, email, address, discountRate: Number(discountRate) || 25 }
+    const input: CompanyInput = {
+      name, taxNumber, taxOffice, phone, email, address,
+      discountRate: Number(discountRate) || 25,
+      creditLimit: Number(creditLimit) || 0,
+    }
     try {
       if (isEdit && company) { await updateCompany(company.id, input); toast.success("Şirket güncellendi") }
       else { await createCompany(input); toast.success("Şirket oluşturuldu") }
@@ -670,6 +679,9 @@ function CompanyForm({ company, onClose, onSaved }: { company: Company | null; o
         <Field label="E-posta"><input value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} /></Field>
         <Field label="İskonto Oranı (%)">
           <input type="number" min={0} max={100} step={0.5} value={discountRate} onChange={(e) => setDiscountRate(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Kredi Limiti (₺)">
+          <input type="number" min={0} step={1000} value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} className={inputCls} />
         </Field>
       </div>
       <AddressFields value={address} onChange={setAddress} />

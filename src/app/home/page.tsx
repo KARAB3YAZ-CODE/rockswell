@@ -11,48 +11,42 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Glow } from "@/components/effects/glow"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useCampaigns, useProducts, useOrders } from "@/hooks/use-data"
+import { useCampaigns, useProducts, useOrders, useData, useDiscountRate } from "@/hooks/use-data"
+import { getDashboardStats } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { roleLabel } from "@/lib/roles"
 import { useCartStore } from "@/lib/store"
+import { dealerPriceDisplay } from "@/lib/pricing"
 import { formatPrice, formatDate, cn } from "@/lib/utils"
 import {
   Package, ChevronRight, ArrowRight, Truck,
-  Shield, Star, Clock, Percent, Sparkles,
-  ShoppingBag, Wallet, TrendingUp,
-  Building2, Search, Zap, Grid3X3,
-  User, Bell, CreditCard, ChevronDown,
-  Plus, Eye, CircleCheck, CircleDashed,
-  Timer, Layers, Flame, MessageSquare,
+  Star, Percent, Sparkles,
+  ShoppingBag, TrendingUp,
+  Search, Zap, Grid3X3,
+  CreditCard,
+  Plus, CircleCheck, CircleDashed,
+  Timer, MessageSquare,
   Minus, ShoppingCart, X,
 } from "lucide-react"
 
-const slides = [
+const fallbackSlides = [
   {
-    title: "2026 Yaz Bakım Kampanyası",
-    subtitle: "Soğutma sistemi, klima ve fren ürünlerinde %40'a varan indirim!",
-    cta: "Kampanyaları İncele",
-    href: "/account/campaigns",
-    gradient: "from-accent/20 via-accent/5 to-transparent",
-    badge: "Fırsat",
-    icon: Flame,
-  },
-  {
-    title: "Yeni Ürünler Geldi",
-    subtitle: "Bosch, Valeo ve Continental'in 2026 ürün serisi stoklarımızda.",
-    cta: "Yeni Ürünler",
-    href: "/products",
-    gradient: "from-info/20 via-info/5 to-transparent",
-    badge: "Yeni",
-    icon: Sparkles,
-  },
-  {
-    title: "Hızlı Sipariş ile Zaman Kazanın",
-    subtitle: "SKU veya OEM numarasıyla saniyeler içinde sipariş oluşturun.",
-    cta: "Hemen Dene",
+    title: "Hızlı Sipariş",
+    subtitle: "SKU veya OEM ile hızlıca sipariş oluşturun.",
+    cta: "Ürünlere Git",
     href: "/products",
     gradient: "from-warning/20 via-warning/5 to-transparent",
     badge: "Hızlı",
     icon: Zap,
+  },
+  {
+    title: "Siparişlerim",
+    subtitle: "Sipariş durumunu takip edin.",
+    cta: "Siparişler",
+    href: "/orders",
+    gradient: "from-info/20 via-info/5 to-transparent",
+    badge: "Sipariş",
+    icon: ShoppingBag,
   },
 ]
 
@@ -86,6 +80,8 @@ export default function CustomerHomePage() {
   const { products, loading: productsLoading } = useProducts()
   const { orders, loading: ordersLoading } = useOrders()
   const { user, company } = useAuth()
+  const { data: stats } = useData(() => getDashboardStats(), [])
+  const { discountRate: companyDiscountRate } = useDiscountRate()
 
   const newProducts = useMemo(() => {
     return [...products]
@@ -100,6 +96,25 @@ export default function CustomerHomePage() {
   const activeCampaigns = useMemo(() => {
     return campaigns.filter((c) => c.isActive).slice(0, 3)
   }, [campaigns])
+
+  const slides = useMemo(() => {
+    if (activeCampaigns.length > 0) {
+      return activeCampaigns.map((campaign, i) => ({
+        title: campaign.name,
+        subtitle: campaign.description || (campaign.discountRate ? `%${campaign.discountRate} indirim fırsatı` : "Kampanyayı inceleyin."),
+        cta: "Kampanyayı İncele",
+        href: "/account/campaigns",
+        gradient: i % 2 === 0 ? "from-accent/20 via-accent/5 to-transparent" : "from-info/20 via-info/5 to-transparent",
+        badge: campaign.discountRate ? `%${campaign.discountRate}` : "Kampanya",
+        icon: Percent,
+      }))
+    }
+    return fallbackSlides
+  }, [activeCampaigns])
+
+  const creditLimit = stats?.creditLimit ?? 0
+  const creditUsed = stats?.creditUsed ?? stats?.currentBalance ?? 0
+  const creditPercent = creditLimit > 0 ? (creditUsed / creditLimit) * 100 : 0
 
   const brands = useMemo(() => {
     const set = new Set<string>()
@@ -174,11 +189,16 @@ export default function CustomerHomePage() {
   }, [])
 
   useEffect(() => {
+    if (slides.length === 0) return
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % slides.length)
     }, 5000)
     return () => clearInterval(timer)
-  }, [])
+  }, [slides.length])
+
+  useEffect(() => {
+    setCurrentSlide((prev) => (slides.length === 0 ? 0 : prev % slides.length))
+  }, [slides.length])
 
   return (
     <Shell>
@@ -202,7 +222,7 @@ export default function CustomerHomePage() {
             >
               <div className="flex items-center gap-3 mb-4">
                 <Badge variant="premium" className="w-fit">
-                  {slides[currentSlide].badge === "Yeni" ? <Sparkles size={12} /> : slides[currentSlide].badge === "Hızlı" ? <Zap size={12} /> : <Flame size={12} />}
+                  {slides[currentSlide].badge === "Hızlı" ? <Zap size={12} /> : slides[currentSlide].badge === "Sipariş" ? <ShoppingBag size={12} /> : <Percent size={12} />}
                   {slides[currentSlide].badge}
                 </Badge>
               </div>
@@ -262,12 +282,13 @@ export default function CustomerHomePage() {
                 <p className="text-sm text-white/50">{company?.name ?? ""}</p>
                 <div className="flex items-center gap-3 mt-2">
                   <div className="flex items-center gap-1.5 text-xs">
-                    <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                    <span className="text-white/40">
-                      {user?.role === "purchase_manager" ? "Satın Alma Yöneticisi" : "Kullanıcı"}
-                    </span>
+                    <span className={cn("w-1.5 h-1.5 rounded-full", user?.isActive ? "bg-success" : "bg-white/30")} />
+                    <span className="text-white/40">{roleLabel(user?.role)}</span>
                   </div>
-                  <Badge variant="success" size="sm">Aktif</Badge>
+                  <Badge variant={user?.isActive ? "success" : "default"} size="sm">
+                    {user?.isActive ? "Aktif" : "Pasif"}
+                  </Badge>
+                  <Badge variant="info" size="sm">%{companyDiscountRate} iskonto</Badge>
                 </div>
               </div>
               <Link href="/account">
@@ -282,16 +303,16 @@ export default function CustomerHomePage() {
               <span className="text-xs font-medium text-white/40 uppercase tracking-wider">Kredi Limiti</span>
               <CreditCard size={16} className="text-white/20" />
             </div>
-            <p className="text-2xl font-bold text-white">₺500.000</p>
+            <p className="text-2xl font-bold text-white">{formatPrice(creditLimit)}</p>
             <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-white/40">Kullanılan: ₺125.450</span>
-              <span className="text-xs text-accent font-medium">%25</span>
+              <span className="text-xs text-white/40">Kullanılan: {formatPrice(creditUsed)}</span>
+              <span className="text-xs text-accent font-medium">%{Math.round(creditPercent)}</span>
             </div>
             <div className="relative h-1.5 bg-white/5 rounded-full mt-2 overflow-hidden">
               <motion.div
                 className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-accent to-accent/60"
                 initial={{ width: 0 }}
-                animate={{ width: "25%" }}
+                animate={{ width: `${Math.min(100, creditPercent)}%` }}
                 transition={{ duration: 1, delay: 0.3 }}
               />
             </div>
@@ -398,7 +419,7 @@ export default function CustomerHomePage() {
                             </div>
                           </div>
                           <div className="text-right shrink-0 mr-1">
-                            <p className="text-sm font-bold text-accent">{formatPrice(product.basePrice)}</p>
+                            <p className="text-sm font-bold text-accent">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate).dealerPrice)}</p>
                           </div>
                           <button
                             onClick={() => addToBatch(product)}
@@ -717,7 +738,7 @@ export default function CustomerHomePage() {
                       <p className="text-sm font-medium text-white/90 truncate group-hover:text-white transition-colors">{product.name}</p>
                       <p className="text-xs text-white/30 mt-0.5 font-mono">{product.sku}</p>
                       <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-                        <p className="text-base font-bold text-accent">{formatPrice(product.basePrice)}</p>
+                        <p className="text-base font-bold text-accent">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate).dealerPrice)}</p>
                         {product.stock[0]?.available > 0 ? (
                           <span className="flex items-center gap-1 text-[10px] text-success">
                             <span className="w-1 h-1 rounded-full bg-success" />
@@ -824,7 +845,7 @@ export default function CustomerHomePage() {
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-white/90 truncate">{product.name}</p>
                           <p className="text-[10px] text-white/30 font-mono">{product.sku}</p>
-                          <p className="text-xs font-bold text-accent mt-0.5">{formatPrice(product.basePrice)}</p>
+                          <p className="text-xs font-bold text-accent mt-0.5">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate).dealerPrice)}</p>
                         </div>
                       </div>
                     </Link>
