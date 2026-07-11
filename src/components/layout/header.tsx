@@ -124,7 +124,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-30 h-14 sm:h-16 border-b border-border bg-background/80 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
-      <div className="flex items-center h-14 sm:h-16 px-3 sm:px-4 lg:px-6 gap-2 sm:gap-3 min-w-0">
+      <div className="flex items-center h-14 sm:h-16 px-3 sm:px-4 lg:px-6 gap-2 sm:gap-3 min-w-0 w-full">
         <button
           type="button"
           onClick={toggleSidebar}
@@ -134,9 +134,9 @@ export function Header() {
           <Menu size={20} />
         </button>
 
-        {/* Desktop / tablet search */}
-        <div className="hidden sm:block flex-1 max-w-xl min-w-0">
-          <div className="relative">
+        {/* Desktop / tablet search — grows with available width */}
+        <div className="hidden sm:block flex-1 min-w-0 max-w-none lg:max-w-2xl xl:max-w-3xl">
+          <div className="relative w-full">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" />
             <input
               type="text"
@@ -178,7 +178,7 @@ export function Header() {
           <Search size={18} />
         </button>
 
-        <div className="flex-1 sm:hidden" />
+        <div className="flex-1 sm:flex-1 min-w-0" />
 
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {stats && (
