@@ -25,7 +25,10 @@ interface CartItem {
 interface CartStore {
   items: CartItem[]
   isOpen: boolean
+  orderNote: string
   setIsOpen: (open: boolean) => void
+  setOrderNote: (note: string) => void
+  appendOrderNote: (note: string) => void
   addItem: (item: CartItem) => void
   removeItem: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
@@ -45,7 +48,17 @@ export const useCartStore = create<CartStore>()(
     (set, get) => ({
       items: [],
       isOpen: false,
+      orderNote: "",
       setIsOpen: (open) => set({ isOpen: open }),
+      setOrderNote: (note) => set({ orderNote: note }),
+      appendOrderNote: (note) =>
+        set((state) => {
+          const t = note.trim()
+          if (!t) return state
+          if (!state.orderNote.trim()) return { orderNote: t }
+          if (state.orderNote.includes(t)) return state
+          return { orderNote: `${state.orderNote.trim()}\n${t}` }
+        }),
       addItem: (item) =>
         set((state) => {
           const existing = state.items.find((i) => i.productId === item.productId)
@@ -73,13 +86,13 @@ export const useCartStore = create<CartStore>()(
             return { ...i, quantity: q, totalPrice: i.unitPrice * q }
           }),
         })),
-      clearCart: () => set({ items: [] }),
+      clearCart: () => set({ items: [], orderNote: "" }),
       getTotalItems: () => get().items.reduce((acc, i) => acc + i.quantity, 0),
       getSubtotal: () => get().items.reduce((acc, i) => acc + i.totalPrice, 0),
     }),
     {
       name: "rockswell_cart",
-      partialize: (state) => ({ items: state.items }),
+      partialize: (state) => ({ items: state.items, orderNote: state.orderNote }),
     }
   )
 )
@@ -172,18 +185,23 @@ interface CompareStore {
   clearAll: () => void
 }
 
-export const useCompareStore = create<CompareStore>((set, get) => ({
-  items: [],
-  addItem: (productId) =>
-    set((state) => {
-      if (state.items.includes(productId)) return state
-      if (state.items.length >= 4) return state
-      return { items: [...state.items, productId] }
+export const useCompareStore = create<CompareStore>()(
+  persist(
+    (set, get) => ({
+      items: [],
+      addItem: (productId) =>
+        set((state) => {
+          if (state.items.includes(productId)) return state
+          if (state.items.length >= 4) return state
+          return { items: [...state.items, productId] }
+        }),
+      removeItem: (productId) =>
+        set((state) => ({ items: state.items.filter((i) => i !== productId) })),
+      clearAll: () => set({ items: [] }),
     }),
-  removeItem: (productId) =>
-    set((state) => ({ items: state.items.filter((i) => i !== productId) })),
-  clearAll: () => set({ items: [] }),
-}))
+    { name: "rockswell-compare" }
+  )
+)
 
 interface RecentlyViewedStore {
   items: string[]

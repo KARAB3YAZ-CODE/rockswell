@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
-import { getOrderById, updateOrderStatus, getAllCompanies, requestOrderReturn } from "@/lib/api"
+import { getOrderById, updateOrderStatus, getAllCompanies, requestOrderReturn, getAllInvoices } from "@/lib/api"
 import { adminPath } from "@/lib/admin-host"
 import { formatDate, formatPrice, cn } from "@/lib/utils"
 import { orderStatusLabels } from "@/components/admin/ui"
@@ -65,6 +65,8 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   const { id } = use(params)
   const { data: order, loading, error, refetch } = useData(() => getOrderById(id), [id])
   const { data: companies } = useData(() => getAllCompanies(), [])
+  const { data: invoices } = useData(() => getAllInvoices(), [])
+  const orderInvoice = invoices?.find((inv) => inv.orderId === id)
   const [busy, setBusy] = useState(false)
   const [showReturn, setShowReturn] = useState(false)
   const [returnReason, setReturnReason] = useState("")
@@ -206,12 +208,22 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                     İade Al
                   </Button>
                 )}
+                {orderInvoice && (
+                  <Link href={adminPath(`/invoices?q=${encodeURIComponent(orderInvoice.invoiceNumber)}`)}>
+                    <Button size="sm" variant="secondary" icon={<FileText size={14} />}>
+                      Fatura
+                    </Button>
+                  </Link>
+                )}
                 {!["cancelled", "returned", "delivered"].includes(order.status) && (
                   <Button
                     size="sm"
                     variant="secondary"
                     disabled={busy}
-                    onClick={() => runStatus("cancelled", "İptal")}
+                    onClick={() => {
+                      if (!window.confirm("Bu siparişi iptal etmek istediğinize emin misiniz? Stok geri alınacak.")) return
+                      runStatus("cancelled", "İptal")
+                    }}
                   >
                     İptal Et
                   </Button>

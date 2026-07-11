@@ -435,20 +435,33 @@ async function toggleCampaignByName(
 
 async function setMaintenance(
   service: SupabaseClient,
-  args: { enabled: boolean; message?: string },
+  args: { enabled: boolean; message?: string; dryRun?: boolean },
   callerId: string
 ): Promise<ToolResult> {
+  const enabled = Boolean(args.enabled)
+  const message = args.message !== undefined ? String(args.message) : undefined
+  if (args.dryRun !== false) {
+    return {
+      ok: true,
+      data: {
+        dryRun: true,
+        maintenanceEnabled: enabled,
+        maintenanceMessage: message,
+      },
+    }
+  }
   const patch: Record<string, unknown> = {
-    maintenance_enabled: Boolean(args.enabled),
+    maintenance_enabled: enabled,
     updated_at: new Date().toISOString(),
     updated_by: callerId,
   }
-  if (args.message !== undefined) patch.maintenance_message = String(args.message)
+  if (message !== undefined) patch.maintenance_message = message
   const { data, error } = await service.from("site_settings").update(patch).eq("id", 1).select().single()
   if (error || !data) return { ok: false, error: error?.message ?? "Ayar güncellenemedi" }
   return {
     ok: true,
     data: {
+      dryRun: false,
       maintenanceEnabled: data.maintenance_enabled,
       maintenanceMessage: data.maintenance_message,
     },
@@ -457,9 +470,20 @@ async function setMaintenance(
 
 async function setPriceUpdateNotice(
   service: SupabaseClient,
-  args: { enabled: boolean; date?: string; message?: string },
+  args: { enabled: boolean; date?: string; message?: string; dryRun?: boolean },
   callerId: string
 ): Promise<ToolResult> {
+  if (args.dryRun !== false) {
+    return {
+      ok: true,
+      data: {
+        dryRun: true,
+        priceUpdateEnabled: Boolean(args.enabled),
+        priceUpdateDate: args.date ?? null,
+        priceUpdateMessage: args.message,
+      },
+    }
+  }
   const patch: Record<string, unknown> = {
     price_update_enabled: Boolean(args.enabled),
     updated_at: new Date().toISOString(),
@@ -472,6 +496,7 @@ async function setPriceUpdateNotice(
   return {
     ok: true,
     data: {
+      dryRun: false,
       priceUpdateEnabled: data.price_update_enabled,
       priceUpdateDate: data.price_update_date,
       priceUpdateMessage: data.price_update_message,
@@ -891,9 +916,9 @@ export async function runAssistantTool(
     case "toggle_campaign":
       return toggleCampaignByName(service, args as { query: string; isActive: boolean; dryRun?: boolean })
     case "set_maintenance":
-      return setMaintenance(service, args as { enabled: boolean; message?: string }, callerId)
+      return setMaintenance(service, args as { enabled: boolean; message?: string; dryRun?: boolean }, callerId)
     case "set_price_update_notice":
-      return setPriceUpdateNotice(service, args as { enabled: boolean; date?: string; message?: string }, callerId)
+      return setPriceUpdateNotice(service, args as { enabled: boolean; date?: string; message?: string; dryRun?: boolean }, callerId)
     case "get_site_status":
       return getSiteStatus(service)
     case "get_business_summary":
@@ -1180,6 +1205,21 @@ function formatToolResult(tool: string, result: ToolResult): FormattedResult {
   }
 
   if (tool === "set_maintenance") {
+    if (data.dryRun) {
+      return fmt(
+        data.maintenanceEnabled
+          ? `Bakım modu açılacak${data.maintenanceMessage ? `.\nMesaj: ${data.maintenanceMessage}` : ""}.\nOnaylıyor musunuz?`
+          : "Bakım modu kapatılacak.\nOnaylıyor musunuz?",
+        {
+          tool: "set_maintenance",
+          args: {
+            enabled: data.maintenanceEnabled,
+            ...(data.maintenanceMessage ? { message: data.maintenanceMessage } : {}),
+            dryRun: false,
+          },
+        }
+      )
+    }
     return fmt(
       data.maintenanceEnabled
         ? `Bakım modu açıldı.\n${data.maintenanceMessage}`
@@ -1188,18 +1228,34 @@ function formatToolResult(tool: string, result: ToolResult): FormattedResult {
       {
         undoAction: {
           tool: "set_maintenance",
-          args: { enabled: !data.maintenanceEnabled },
+          args: { enabled: !data.maintenanceEnabled, dryRun: false },
         },
       }
     )
   }
 
   if (tool === "set_price_update_notice") {
+    if (data.dryRun) {
+      return fmt(
+        data.priceUpdateEnabled
+          ? `Fiyat güncelleme bildirimi açılacak${data.priceUpdateDate ? ` (${data.priceUpdateDate})` : ""}.\nOnaylıyor musunuz?`
+          : "Fiyat güncelleme bildirimi kapatılacak.\nOnaylıyor musunuz?",
+        {
+          tool: "set_price_update_notice",
+          args: {
+            enabled: data.priceUpdateEnabled,
+            ...(data.priceUpdateDate ? { date: data.priceUpdateDate } : {}),
+            ...(data.priceUpdateMessage ? { message: data.priceUpdateMessage } : {}),
+            dryRun: false,
+          },
+        }
+      )
+    }
     if (!data.priceUpdateEnabled) {
       return fmt("Fiyat güncelleme bildirimi kapatıldı.", null, {
         undoAction: {
           tool: "set_price_update_notice",
-          args: { enabled: true, date: data.priceUpdateDate, message: data.priceUpdateMessage },
+          args: { enabled: true, date: data.priceUpdateDate, message: data.priceUpdateMessage, dryRun: false },
         },
       })
     }
@@ -1207,7 +1263,7 @@ function formatToolResult(tool: string, result: ToolResult): FormattedResult {
       `Fiyat güncelleme bildirimi açıldı${data.priceUpdateDate ? ` (${data.priceUpdateDate})` : ""}.`,
       null,
       {
-        undoAction: { tool: "set_price_update_notice", args: { enabled: false } },
+        undoAction: { tool: "set_price_update_notice", args: { enabled: false, dryRun: false } },
       }
     )
   }
@@ -1574,23 +1630,23 @@ function parseIntent(raw: string): ParsedIntent {
     return {
       kind: "tool",
       tool: "set_maintenance",
-      args: { enabled: true, ...(msg ? { message: msg[1].trim() } : {}) },
+      args: { enabled: true, dryRun: true, ...(msg ? { message: msg[1].trim() } : {}) },
     }
   }
   if (/bakim/.test(n) && /(kapat|kapa|pasif|bitir)/.test(n)) {
-    return { kind: "tool", tool: "set_maintenance", args: { enabled: false } }
+    return { kind: "tool", tool: "set_maintenance", args: { enabled: false, dryRun: true } }
   }
 
   // Price update notice
   if (/fiyat.*(guncelle|bildirim|duyuru)/.test(n) || /guncelleme\s*bildirim/.test(n)) {
     if (/(kapat|kapa|pasif|bitir)/.test(n)) {
-      return { kind: "tool", tool: "set_price_update_notice", args: { enabled: false } }
+      return { kind: "tool", tool: "set_price_update_notice", args: { enabled: false, dryRun: true } }
     }
     const date = parseDateFromText(text, n)
     return {
       kind: "tool",
       tool: "set_price_update_notice",
-      args: { enabled: true, ...(date ? { date } : {}) },
+      args: { enabled: true, dryRun: true, ...(date ? { date } : {}) },
     }
   }
 

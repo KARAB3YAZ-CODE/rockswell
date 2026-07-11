@@ -12,8 +12,11 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useCartStore, useSearchStore } from "@/lib/store"
+import { cartItemFromProduct, productInStock } from "@/lib/cart-item"
 import { useSearch } from "@/hooks/use-data"
+import { dealerPriceDisplay } from "@/lib/pricing"
 import { formatPrice } from "@/lib/utils"
+import { useDiscountRate } from "@/hooks/use-data"
 import {
   Search, Package, X, Clock, TrendingUp, Plus,
 } from "lucide-react"
@@ -40,6 +43,7 @@ function SearchContent() {
   const [debounced, setDebounced] = useState(initialQ)
   const { recentSearches, addRecentSearch } = useSearchStore()
   const addToCart = useCartStore((s) => s.addItem)
+  const { discountRate } = useDiscountRate()
   const { results, loading } = useSearch(debounced)
 
   useEffect(() => {
@@ -169,25 +173,27 @@ function SearchContent() {
                       <span className="text-[10px] text-white/30 font-mono">{product.sku}</span>
                     </div>
                     <div className="flex items-center justify-between mt-3">
-                      <p className="text-lg font-bold text-white">{formatPrice(product.basePrice)}</p>
+                      <p className="text-lg font-bold text-white">
+                        {formatPrice(
+                          dealerPriceDisplay(
+                            product.basePrice,
+                            discountRate,
+                            product.customerPriceApplied
+                          ).dealerPrice
+                        )}
+                      </p>
                       <Button
                         size="sm"
                         variant="secondary"
                         icon={<Plus size={14} />}
+                        disabled={!productInStock(product)}
                         onClick={(e) => {
                           e.preventDefault()
-                          addToCart({
-                            productId: product.id,
-                            productName: product.name,
-                            sku: product.sku,
-                            brand: product.brand,
-                            image: product.images[0] || "",
-                            quantity: product.minOrderQuantity,
-                            unitPrice: product.basePrice,
-                            totalPrice: product.basePrice * product.minOrderQuantity,
-                            warehouseId: product.stock[0]?.warehouseId || "",
-                            minOrderQuantity: product.minOrderQuantity,
-                          })
+                          if (!productInStock(product)) {
+                            toast.error("Stokta yok")
+                            return
+                          }
+                          addToCart(cartItemFromProduct(product))
                           toast.success("Sepete eklendi")
                         }}
                       />

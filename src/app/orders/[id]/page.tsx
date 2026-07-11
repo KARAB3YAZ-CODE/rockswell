@@ -282,6 +282,9 @@ export default function OrderDetailPage() {
                 <h2 className="text-sm font-semibold text-white mb-2">Fiyat Özeti</h2>
                 <Row label="Ara Toplam" value={formatPrice(order.pricing.subtotal)} />
                 <Row label="Bayi İndirimi" value={`-${formatPrice(order.pricing.discountTotal)}`} valueClass="text-success" />
+                {(order.pricing.campaignDiscount ?? 0) > 0 && (
+                  <Row label="Kampanya İndirimi" value={`-${formatPrice(order.pricing.campaignDiscount)}`} valueClass="text-success" />
+                )}
                 {(order.pricing.paymentDiscount ?? 0) > 0 && (
                   <Row label="Havale / EFT İndirimi" value={`-${formatPrice(order.pricing.paymentDiscount)}`} valueClass="text-success" />
                 )}
@@ -306,6 +309,9 @@ export default function OrderDetailPage() {
                   <h2 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
                     <MapPin size={14} className="text-accent" /> Teslimat
                   </h2>
+                  {order.shipping.trackingNumber && (
+                    <Row label="Kargo Takip" value={order.shipping.trackingNumber} />
+                  )}
                   <p className="text-xs text-white/50 leading-relaxed">
                     {[order.shipping.address?.street, order.shipping.address?.district, order.shipping.address?.city]
                       .filter(Boolean)

@@ -18,6 +18,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "E-posta ve ad zorunlu" }, { status: 400 })
     }
 
+    if (role === "admin") {
+      return NextResponse.json(
+        { error: "Yeni admin bu panelden oluşturulamaz" },
+        { status: 403 }
+      )
+    }
+
     if (!companyId && companyName?.trim()) {
       const { data: company, error: cErr } = await service
         .from("companies")

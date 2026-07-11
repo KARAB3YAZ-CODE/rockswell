@@ -12,7 +12,7 @@ import { Skeleton, TableSkeleton } from "@/components/ui/skeleton"
 import { useOrders, useData } from "@/hooks/use-data"
 import {
   getAdminStats, getAllUsers, getAllCompanies, getAllCampaigns, getAllWarehouses,
-  getCategories, getVehicleBrands, getProductBrands,
+  getCategories, getVehicleBrands, getProductBrands, getSiteSettings,
   createCampaign, updateCampaign, deleteCampaign, setCampaignActive,
   createCompany, updateCompany, deleteCompany,
   createWarehouse, updateWarehouse, deleteWarehouse,
@@ -28,7 +28,7 @@ import {
   Users, Building2, Package, ShoppingBag,
   BarChart3, DollarSign,
   Warehouse as WarehouseIcon, Percent, TrendingUp, Search,
-  Eye, Plus, CheckCircle, XCircle, Truck, X,
+  Plus, CheckCircle, XCircle, Truck, X,
   KeyRound, Copy, Check, Pencil, Trash2, Ban, UserPlus, ChevronRight,
 } from "lucide-react"
 import { ROLE_LABELS } from "@/lib/roles"
@@ -77,6 +77,7 @@ export function AdminOverview() {
   const { data: stats, loading } = useData(() => getAdminStats(), [])
   const { orders, loading: ordersLoading } = useOrders()
   const { data: companies } = useData(() => getAllCompanies(), [])
+  const { data: site } = useData(() => getSiteSettings(), [])
 
   const companyNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -115,7 +116,11 @@ export function AdminOverview() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h2 className="text-2xl font-bold text-white">Yönetim Paneli</h2>
-              <Badge variant="success" pulsing>Sistem Aktif</Badge>
+              {site?.maintenanceEnabled ? (
+                <Badge variant="danger" pulsing>Bakımda</Badge>
+              ) : (
+                <Badge variant="success" pulsing>Sistem Aktif</Badge>
+              )}
             </div>
             <p className="text-sm text-white/50">Sistemin genel durumunu buradan takip edin</p>
           </div>
@@ -584,7 +589,9 @@ export function UserForm({ user, companies, onClose, onSaved }: {
       <div className="grid grid-cols-2 gap-3">
         <Field label="Rol">
           <select value={role} onChange={(e) => setRole(e.target.value)} className={inputCls}>
-            {Object.entries(roleLabels).map(([k, v]) => <option key={k} value={k} className="bg-card">{v}</option>)}
+            {Object.entries(roleLabels)
+              .filter(([k]) => k !== "admin" || user?.role === "admin")
+              .map(([k, v]) => <option key={k} value={k} className="bg-card">{v}</option>)}
           </select>
         </Field>
         <Field label="Firma">
@@ -1331,7 +1338,6 @@ export function WarehouseForm({
     const input: WarehouseInput = {
       name, code, manager, phone, workingHours,
       capacity: Number(capacity) || 0,
-      usedCapacity: Number(usedCapacity) || 0,
       isActive, address,
     }
     try {
@@ -1357,14 +1363,17 @@ export function WarehouseForm({
         <Field label="Kod"><input value={code} onChange={(e) => setCode(e.target.value)} className={inputCls} /></Field>
         <Field label="Sorumlu">
           <select value={manager} onChange={(e) => setManager(e.target.value)} className={cn(inputCls, "cursor-pointer")}>
-            <option value="" className="bg-card">Seçin veya aşağıya yazın…</option>
+            <option value="" className="bg-card">Seçin…</option>
             {managers.map((m) => (
               <option key={m} value={m} className="bg-card">{m}</option>
             ))}
           </select>
-        </Field>
-        <Field label="Sorumlu (serbest)">
-          <input value={manager} onChange={(e) => setManager(e.target.value)} placeholder="Listede yoksa yazın" className={inputCls} />
+          <input
+            value={manager}
+            onChange={(e) => setManager(e.target.value)}
+            placeholder="Listede yoksa yazın"
+            className={cn(inputCls, "mt-2")}
+          />
         </Field>
         <Field label="Telefon"><input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} /></Field>
         <Field label="Çalışma Saatleri"><input value={workingHours} onChange={(e) => setWorkingHours(e.target.value)} className={inputCls} /></Field>

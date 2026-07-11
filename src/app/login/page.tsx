@@ -16,9 +16,22 @@ export default function LoginPage() {
   const { isAuthenticated, isAdmin, login, loading } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [rememberMe, setRememberMe] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [mode, setMode] = useState<"login" | "forgot">("login")
   const [resetting, setResetting] = useState(false)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("rockswell-remember-email")
+      if (saved) {
+        setEmail(saved)
+        setRememberMe(true)
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.search.includes("registered=true")) {
@@ -45,6 +58,12 @@ export default function LoginPage() {
     setSubmitting(true)
     try {
       await login(email, password)
+      try {
+        if (rememberMe) localStorage.setItem("rockswell-remember-email", email.trim())
+        else localStorage.removeItem("rockswell-remember-email")
+      } catch {
+        /* ignore */
+      }
       toast.success("Giriş başarılı")
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Giriş başarısız")
@@ -151,7 +170,21 @@ export default function LoginPage() {
 
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-sm text-white/50">
-                <input type="checkbox" defaultChecked className="rounded border-white/20 bg-white/5" />
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => {
+                    setRememberMe(e.target.checked)
+                    if (!e.target.checked) {
+                      try {
+                        localStorage.removeItem("rockswell-remember-email")
+                      } catch {
+                        /* ignore */
+                      }
+                    }
+                  }}
+                  className="rounded border-white/20 bg-white/5"
+                />
                 Beni Hatırla
               </label>
               <button

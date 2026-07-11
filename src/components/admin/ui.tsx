@@ -12,9 +12,9 @@ export const emptyAddress: Address = { street: "", city: "", district: "", count
 export const orderStatusLabels: Record<string, string> = {
   draft: "Ödeme Bekliyor",
   pending_approval: "Onay Bekliyor",
-  approved: "Onaylandı",
+  approved: "Havale Onayı",
   quotation: "Teklif",
-  confirmed: "Onaylandı",
+  confirmed: "Ödeme Onaylı",
   processing: "Hazırlanıyor",
   shipped: "Kargoda",
   delivered: "Teslim Edildi",

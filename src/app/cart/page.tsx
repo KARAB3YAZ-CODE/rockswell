@@ -29,8 +29,7 @@ import {
 export default function CartPage() {
   const router = useRouter()
   const { isAuthenticated } = useAuth()
-  const { items, updateQuantity, removeItem, clearCart } = useCartStore()
-  const [orderNote, setOrderNote] = useState("")
+  const { items, updateQuantity, removeItem, clearCart, orderNote, setOrderNote } = useCartStore()
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("havale")
   const [submitting, setSubmitting] = useState(false)
 

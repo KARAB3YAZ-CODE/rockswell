@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProducts, useDiscountRate } from "@/hooks/use-data"
 import { dealerPriceDisplay } from "@/lib/pricing"
+import { cartItemFromProduct, productInStock } from "@/lib/cart-item"
 import { useCompareStore, useCartStore } from "@/lib/store"
 import { cn, formatPrice } from "@/lib/utils"
 import type { Product } from "@/lib/types"
@@ -170,22 +171,13 @@ function CompareContent() {
                         size="sm"
                         className="w-full mt-3"
                         icon={<ShoppingCart size={14} />}
+                        disabled={!productInStock(product)}
                         onClick={() => {
-                          addItem({
-                            productId: product.id,
-                            productName: product.name,
-                            sku: product.sku,
-                            brand: product.brand,
-                            image: product.images[0] || "",
-                            quantity: product.minOrderQuantity,
-                            unitPrice: product.basePrice,
-                            totalPrice: product.basePrice * product.minOrderQuantity,
-                            warehouseId: product.stock[0]?.warehouseId || "",
-                            minOrderQuantity: product.minOrderQuantity,
-                            priceLocked: product.customerPriceApplied,
-                            category: product.category,
-                            vehicleBrands: product.compatibleVehicles.map((v) => v.brand),
-                          })
+                          if (!productInStock(product)) {
+                            toast.error("Stokta yok")
+                            return
+                          }
+                          addItem(cartItemFromProduct(product))
                           toast.success("Sepete eklendi")
                         }}
                       >

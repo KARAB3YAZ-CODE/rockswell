@@ -16,6 +16,7 @@ import { getDashboardStats, getHomeBanners } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { roleLabel } from "@/lib/roles"
 import { useCartStore } from "@/lib/store"
+import { cartItemFromProduct, productInStock } from "@/lib/cart-item"
 import { dealerPriceDisplay } from "@/lib/pricing"
 import { formatPrice, formatDate, cn } from "@/lib/utils"
 import {
@@ -73,6 +74,10 @@ export default function CustomerHomePage() {
     totalPrice: number
     warehouseId: string
     minOrderQuantity: number
+    maxOrderQuantity?: number
+    priceLocked?: boolean
+    category?: string
+    vehicleBrands?: string[]
     inStock: boolean
   }>>([])
   const addCartItem = useCartStore((s) => s.addItem)
@@ -177,22 +182,14 @@ export default function CustomerHomePage() {
   }, [products, quickSearch])
 
   const addToBatch = useCallback((product: typeof products[0]) => {
+    if (!productInStock(product)) {
+      toast.error("Bu ürün stokta yok")
+      return
+    }
     setBatchItems((prev) => {
       if (prev.some((i) => i.productId === product.id)) return prev
-      const warehouseId = product.stock.find((s) => s.available > 0)?.warehouseId || product.stock[0]?.warehouseId || ""
-      return [...prev, {
-        productId: product.id,
-        productName: product.name,
-        sku: product.sku,
-        brand: product.brand,
-        image: product.images[0] || "",
-        quantity: product.minOrderQuantity,
-        unitPrice: product.basePrice,
-        totalPrice: product.basePrice * product.minOrderQuantity,
-        warehouseId,
-        minOrderQuantity: product.minOrderQuantity,
-        inStock: product.stock.some((s) => s.available > 0),
-      }]
+      const line = cartItemFromProduct(product)
+      return [...prev, { ...line, inStock: true }]
     })
     setQuickSearch("")
   }, [])
@@ -605,7 +602,12 @@ export default function CustomerHomePage() {
                   </button>
                   <button
                     onClick={() => {
-                      for (const item of batchItems) {
+                      const inStock = batchItems.filter((i) => i.inStock)
+                      if (!inStock.length) {
+                        toast.error("Stokta ürün yok")
+                        return
+                      }
+                      for (const item of inStock) {
                         addCartItem({
                           productId: item.productId,
                           productName: item.productName,
@@ -617,9 +619,13 @@ export default function CustomerHomePage() {
                           totalPrice: item.totalPrice,
                           warehouseId: item.warehouseId,
                           minOrderQuantity: item.minOrderQuantity,
+                          maxOrderQuantity: item.maxOrderQuantity,
+                          priceLocked: item.priceLocked,
+                          category: item.category,
+                          vehicleBrands: item.vehicleBrands,
                         })
                       }
-                      toast.success(`${batchItems.length} ürün sepete eklendi`)
+                      toast.success(`${inStock.length} ürün sepete eklendi`)
                       setBatchItems([])
                     }}
                     className="flex items-center gap-2 h-9 px-4 rounded-lg bg-accent text-black text-xs font-bold hover:bg-accent/90 active:scale-95 transition-all"

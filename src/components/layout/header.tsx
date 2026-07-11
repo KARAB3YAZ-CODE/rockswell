@@ -11,6 +11,7 @@ import { useUIStore, useCartStore } from "@/lib/store"
 import { useDashboardStats, useProducts, useNotifications } from "@/hooks/use-data"
 import { markNotificationRead, markAllNotificationsRead } from "@/lib/api"
 import { decodeVin } from "@/lib/vin"
+import { cartItemFromProduct, productInStock } from "@/lib/cart-item"
 import type { Product } from "@/lib/types"
 import {
   Search, Bell, ShoppingCart, ChevronDown, User, Settings,
@@ -52,7 +53,9 @@ export function Header() {
   const [quickBatch, setQuickBatch] = useState<Array<{
     productId: string; productName: string; sku: string; brand: string
     image: string; quantity: number; unitPrice: number; totalPrice: number
-    warehouseId: string; minOrderQuantity: number; inStock: boolean
+    warehouseId: string; minOrderQuantity: number; maxOrderQuantity?: number
+    priceLocked?: boolean; category?: string; vehicleBrands?: string[]
+    inStock: boolean
   }>>([])
  
   const { stats } = useDashboardStats()
@@ -94,22 +97,13 @@ export function Header() {
   }, [products, quickSku])
 
   const addToQuickBatch = (product: Product) => {
+    if (!productInStock(product)) {
+      toast.error("Bu ürün stokta yok")
+      return
+    }
     setQuickBatch((prev) => {
       if (prev.some((i) => i.productId === product.id)) return prev
-      const warehouseId = product.stock.find((s) => s.available > 0)?.warehouseId || product.stock[0]?.warehouseId || ""
-      return [...prev, {
-        productId: product.id,
-        productName: product.name,
-        sku: product.sku,
-        brand: product.brand,
-        image: product.images[0] || "",
-        quantity: product.minOrderQuantity,
-        unitPrice: product.basePrice,
-        totalPrice: product.basePrice * product.minOrderQuantity,
-        warehouseId,
-        minOrderQuantity: product.minOrderQuantity,
-        inStock: product.stock.some((s) => s.available > 0),
-      }]
+      return [...prev, { ...cartItemFromProduct(product), inStock: true }]
     })
     setQuickSku("")
   }
@@ -337,7 +331,12 @@ export function Header() {
                           </button>
                           <button
                             onClick={() => {
-                              for (const item of quickBatch) {
+                              const inStock = quickBatch.filter((i) => i.inStock)
+                              if (!inStock.length) {
+                                toast.error("Stokta ürün yok")
+                                return
+                              }
+                              for (const item of inStock) {
                                 addItem({
                                   productId: item.productId,
                                   productName: item.productName,
@@ -349,9 +348,13 @@ export function Header() {
                                   totalPrice: item.totalPrice,
                                   warehouseId: item.warehouseId,
                                   minOrderQuantity: item.minOrderQuantity,
+                                  maxOrderQuantity: item.maxOrderQuantity,
+                                  priceLocked: item.priceLocked,
+                                  category: item.category,
+                                  vehicleBrands: item.vehicleBrands,
                                 })
                               }
-                              toast.success(`${quickBatch.length} ürün sepete eklendi`)
+                              toast.success(`${inStock.length} ürün sepete eklendi`)
                               setQuickBatch([])
                               setShowQuickOrder(false)
                             }}
@@ -490,7 +493,13 @@ export function Header() {
                     "flex items-start gap-3 p-4 border-b border-border/50 hover:bg-white/[0.02] transition-colors cursor-pointer",
                     !n.read && "bg-accent/[0.02]"
                   )}
-                  onClick={() => markAsRead(n.id)}
+                  onClick={() => {
+                    markAsRead(n.id)
+                    if (n.link) {
+                      setShowNotifications(false)
+                      router.push(n.link)
+                    }
+                  }}
                 >
                   <div className={cn(
                     "w-8 h-8 rounded-xl flex items-center justify-center shrink-0",

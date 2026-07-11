@@ -35,9 +35,18 @@ export async function POST(request: Request) {
     }
 
     const config = getPaytrConfig()
+    const allowTest =
+      process.env.PAYTR_ALLOW_TEST_MODE === "1" ||
+      process.env.NODE_ENV !== "production"
 
-    // Not configured yet → test mode so the flow is demoable until credentials are added.
+    // Not configured: only allow test confirm in non-production (or explicit flag).
     if (!config) {
+      if (!allowTest) {
+        return NextResponse.json(
+          { error: "Online ödeme şu an yapılandırılmamış. Lütfen Havale/EFT seçin veya yöneticiye bildirin." },
+          { status: 503 }
+        )
+      }
       return NextResponse.json({ testMode: true, amount })
     }
 

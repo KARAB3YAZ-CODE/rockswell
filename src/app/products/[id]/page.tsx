@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useProduct, useProducts, useDiscountRate } from "@/hooks/use-data"
 import { useCartStore, useCompareStore } from "@/lib/store"
+import { cartItemFromProduct, productInStock } from "@/lib/cart-item"
 import { dealerPriceDisplay, TAX_RATE } from "@/lib/pricing"
 import { formatPrice } from "@/lib/utils"
 import {
@@ -27,6 +28,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const { products } = useProducts()
   const { discountRate: companyRate } = useDiscountRate()
   const addItem = useCartStore((s) => s.addItem)
+  const appendOrderNote = useCartStore((s) => s.appendOrderNote)
   const compareItems = useCompareStore((s) => s.items)
   const addCompare = useCompareStore((s) => s.addItem)
   const removeCompare = useCompareStore((s) => s.removeItem)
@@ -216,22 +218,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <Button
                   size="lg"
                   icon={<ShoppingCart size={18} />}
+                  disabled={!productInStock(product)}
                   onClick={() => {
-                    addItem({
-                      productId: product.id,
-                      productName: product.name,
-                      sku: product.sku,
-                      brand: product.brand,
-                      image: product.images[0] || "",
-                      quantity,
-                      unitPrice: product.basePrice,
-                      totalPrice: product.basePrice * quantity,
-                      warehouseId: product.stock[0]?.warehouseId || "",
-                      minOrderQuantity: product.minOrderQuantity,
-                      priceLocked: product.customerPriceApplied,
-                      category: product.category,
-                      vehicleBrands: product.compatibleVehicles.map((v) => v.brand),
-                    })
+                    if (!productInStock(product)) {
+                      toast.error("Stokta yok")
+                      return
+                    }
+                    addItem(cartItemFromProduct(product, quantity))
+                    if (orderNote.trim()) appendOrderNote(`${product.sku}: ${orderNote.trim()}`)
                     toast.success(`${product.name} sepete eklendi`)
                   }}
                   className="flex-1"

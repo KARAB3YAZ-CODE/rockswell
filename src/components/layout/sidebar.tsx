@@ -41,7 +41,7 @@ const customerNav: NavItem[] = [
       { label: "Tüm Siparişler", href: "/orders" },
       { label: "Onay Bekleyen", href: "/orders?status=pending_approval" },
       { label: "Kargodakiler", href: "/orders?status=shipped" },
-      { label: "İade Talepleri", href: "/orders?status=returned" },
+      { label: "İade Talepleri", href: "/orders?returns=1" },
     ],
   },
   { label: "Sepet", icon: <ClipboardList size={20} />, href: "/cart" },

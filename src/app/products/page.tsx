@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, Suspense, useMemo } from "react"
+import { useState, Suspense, useMemo, useEffect } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import toast from "react-hot-toast"
 import { Shell } from "@/components/layout/shell"
@@ -14,6 +14,7 @@ import { GlassCard } from "@/components/effects/glass-card"
 import { useProducts } from "@/hooks/use-data"
 import { useDiscountRate } from "@/hooks/use-data"
 import { useCartStore, useCompareStore } from "@/lib/store"
+import { cartItemFromProduct, productInStock } from "@/lib/cart-item"
 import { cn, formatPrice } from "@/lib/utils"
 import { dealerPriceDisplay } from "@/lib/pricing"
 import type { Product } from "@/lib/types"
@@ -33,6 +34,7 @@ export default function ProductsPage() {
 }
 
 function ProductsContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [searchQuery, setSearchQuery] = useState("")
@@ -51,6 +53,26 @@ function ProductsContent() {
   const { products, loading } = useProducts()
   const addItem = useCartStore((s) => s.addItem)
   const perPage = 12
+
+  useEffect(() => {
+    setSelectedCategory(searchParams.get("category") || null)
+    const b = searchParams.get("brand")
+    setSelectedBrands(b ? [b] : [])
+    const v = searchParams.get("vehicleBrand")
+    setSelectedVehicleBrands(v ? [v] : [])
+  }, [searchParams])
+
+  const syncUrl = (next: { category?: string | null; brand?: string[]; vehicleBrand?: string[] }) => {
+    const params = new URLSearchParams()
+    const cat = next.category !== undefined ? next.category : selectedCategory
+    const brands = next.brand !== undefined ? next.brand : selectedBrands
+    const vehicles = next.vehicleBrand !== undefined ? next.vehicleBrand : selectedVehicleBrands
+    if (cat) params.set("category", cat)
+    if (brands[0]) params.set("brand", brands[0])
+    if (vehicles[0]) params.set("vehicleBrand", vehicles[0])
+    const qs = params.toString()
+    router.replace(qs ? `/products?${qs}` : "/products", { scroll: false })
+  }
 
   const categories = [...new Set(products.map(p => p.category))]
   const brands = [...new Set(products.map(p => p.brand))]
@@ -163,7 +185,12 @@ function ProductsContent() {
                       {categories.map((cat) => (
                         <button
                           key={cat}
-                          onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+                          onClick={() => {
+                            const next = selectedCategory === cat ? null : cat
+                            setSelectedCategory(next)
+                            setCurrentPage(1)
+                            syncUrl({ category: next })
+                          }}
                           className={cn(
                             "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
                             selectedCategory === cat ? "bg-accent/10 text-accent" : "text-white/50 hover:text-white hover:bg-white/5"
@@ -184,9 +211,12 @@ function ProductsContent() {
                             type="checkbox"
                             checked={selectedBrands.includes(brand)}
                             onChange={() => {
-                              setSelectedBrands((prev) =>
-                                prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
-                              )
+                              setSelectedBrands((prev) => {
+                                const next = prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
+                                setCurrentPage(1)
+                                syncUrl({ brand: next })
+                                return next
+                              })
                             }}
                             className="w-3.5 h-3.5 rounded border-white/20 bg-white/5 text-accent focus:ring-accent/30"
                           />
@@ -256,21 +286,11 @@ function ProductsContent() {
                     transition={{ delay: (i % perPage) * 0.02 }}
                   >
             <ProductCard product={product} viewMode={viewMode} onAddToCart={() => {
-              addItem({
-                productId: product.id,
-                productName: product.name,
-                sku: product.sku,
-                brand: product.brand,
-                image: product.images[0] || "",
-                quantity: product.minOrderQuantity,
-                unitPrice: product.basePrice,
-                totalPrice: product.basePrice * product.minOrderQuantity,
-                warehouseId: product.stock[0]?.warehouseId || "",
-                minOrderQuantity: product.minOrderQuantity,
-                priceLocked: product.customerPriceApplied,
-                category: product.category,
-                vehicleBrands: product.compatibleVehicles.map((v) => v.brand),
-              })
+              if (!productInStock(product)) {
+                toast.error("Stokta yok")
+                return
+              }
+              addItem(cartItemFromProduct(product))
               toast.success(`${product.name} sepete eklendi`)
             }} />
                   </motion.div>

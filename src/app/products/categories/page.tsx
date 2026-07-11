@@ -101,7 +101,7 @@ export default function CategoriesPage() {
 
         {viewMode === "grid" ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {sorted.slice(0, 16).map((cat, i) => {
+            {sorted.map((cat, i) => {
               const subs = subcategoriesByCategory[cat] || []
               return (
                 <motion.div
@@ -134,7 +134,7 @@ export default function CategoriesPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {sorted.slice(0, 16).map((cat) => {
+            {sorted.map((cat) => {
               const subs = subcategoriesByCategory[cat] || []
               return (
                 <Link key={cat} href={`/products?category=${encodeURIComponent(cat)}`}>

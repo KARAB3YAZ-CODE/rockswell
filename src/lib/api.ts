@@ -261,7 +261,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
   const trimmed = email.trim()
   if (!trimmed) err("E-posta gerekli")
   const redirectTo =
-    typeof window !== "undefined" ? `${window.location.origin}/login` : undefined
+    typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined
   const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
     redirectTo,
   })
@@ -286,6 +286,34 @@ export async function createSupportTicket(input: {
     status: "open",
   })
   if (error) err(error.message)
+}
+
+export interface SupportTicket {
+  id: string
+  subject: string
+  category: string
+  message: string
+  status: string
+  createdAt: string
+}
+
+export async function getMySupportTickets(): Promise<SupportTicket[]> {
+  const user = await getCurrentUser()
+  const { data, error } = await supabase
+    .from("support_tickets")
+    .select("id, subject, category, message, status, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(50)
+  if (error) err(error.message)
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    subject: String(row.subject),
+    category: String(row.category ?? "genel"),
+    message: String(row.message),
+    status: String(row.status ?? "open"),
+    createdAt: String(row.created_at),
+  }))
 }
 
 // ─── Products ───────────────────────────────────────────────────────────────
@@ -360,6 +388,11 @@ export async function bulkDeleteProducts(ids: string[]): Promise<number> {
     .delete({ count: "exact" })
     .in("id", ids)
   if (error) err(error.message)
+  try {
+    await syncWarehouseUsedCapacity(supabase)
+  } catch {
+    /* best-effort */
+  }
   return count ?? ids.length
 }
 
@@ -750,9 +783,28 @@ export async function updateOrderStatus(
       ["draft", "pending_approval", "approved", "quotation"].includes(prev)
     ) {
       await applyStockMovement(supabase, lines, "commit")
-    } else if (status === "cancelled" && !["cancelled", "returned", "delivered", "shipped"].includes(prev)) {
+    } else if (status === "cancelled" && !["cancelled", "returned"].includes(prev)) {
       if (["draft", "pending_approval", "approved"].includes(prev)) {
         await applyStockMovement(supabase, lines, "release")
+      } else if (["confirmed", "processing", "shipped", "delivered"].includes(prev)) {
+        const items = (Array.isArray(data.items) ? data.items : []) as Array<{
+          productId: string
+          warehouseId: string
+          quantity: number
+          returnedQuantity?: number
+          productName?: string
+        }>
+        const remaining = items
+          .map((i) => ({
+            productId: i.productId,
+            warehouseId: i.warehouseId,
+            quantity: Math.max(0, Number(i.quantity) - Number(i.returnedQuantity ?? 0)),
+            productName: i.productName,
+          }))
+          .filter((i) => i.quantity > 0)
+        if (remaining.length) {
+          await applyStockMovement(supabase, orderItemsToStockLines(remaining), "restock")
+        }
       }
     } else if (status === "returned" && prev !== "returned") {
       const items = (Array.isArray(data.items) ? data.items : []) as Array<{
@@ -1187,6 +1239,21 @@ export async function updateCompany(id: string, input: CompanyInput): Promise<Co
 
 export async function deleteCompany(id: string): Promise<void> {
   await requireAdminUser()
+  const [{ count: orderCount }, { count: invoiceCount }, { count: userCount }] = await Promise.all([
+    supabase.from("orders").select("*", { count: "exact", head: true }).eq("company_id", id),
+    supabase.from("invoices").select("*", { count: "exact", head: true }).eq("company_id", id),
+    supabase.from("profiles").select("*", { count: "exact", head: true }).eq("company_id", id),
+  ])
+  const orders = orderCount ?? 0
+  const invoices = invoiceCount ?? 0
+  if (orders > 0 || invoices > 0) {
+    err(
+      `Bu firmada ${orders} sipariş ve ${invoices} fatura var. Silmek veri kaybına yol açar — önce kayıtları arşivleyin veya firmayı pasife alın.`
+    )
+  }
+  if ((userCount ?? 0) > 0) {
+    err(`Bu firmaya bağlı ${userCount} kullanıcı var. Önce kullanıcıları başka firmaya taşıyın veya firmasız bırakın.`)
+  }
   const { error } = await supabase.from("companies").delete().eq("id", id)
   if (error) err(error.message)
 }
@@ -1317,11 +1384,50 @@ export async function deleteProduct(id: string): Promise<void> {
   await requireAdminUser()
   const { error } = await supabase.from("products").delete().eq("id", id)
   if (error) err(error.message)
+  try {
+    await syncWarehouseUsedCapacity(supabase)
+  } catch {
+    /* best-effort */
+  }
 }
 
 // Orders
 export async function deleteOrder(id: string): Promise<void> {
   await requireAdminUser()
+  const { data: existing, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", id)
+    .single()
+  if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
+
+  const status = String(existing.status)
+  const items = (Array.isArray(existing.items) ? existing.items : []) as Array<{
+    productId: string
+    warehouseId: string
+    quantity: number
+    returnedQuantity?: number
+    productName?: string
+  }>
+  const lines = orderItemsToStockLines(
+    items.map((i) => ({
+      productId: i.productId,
+      warehouseId: i.warehouseId,
+      quantity: Math.max(0, Number(i.quantity) - Number(i.returnedQuantity ?? 0)),
+      productName: i.productName,
+    })).filter((i) => i.quantity > 0)
+  )
+
+  try {
+    if (["draft", "pending_approval", "approved"].includes(status) && lines.length) {
+      await applyStockMovement(supabase, lines, "release")
+    } else if (["confirmed", "processing", "shipped", "delivered"].includes(status) && lines.length) {
+      await applyStockMovement(supabase, lines, "restock")
+    }
+  } catch {
+    /* best-effort before delete */
+  }
+
   const { error } = await supabase.from("orders").delete().eq("id", id)
   if (error) err(error.message)
 }
@@ -1367,18 +1473,22 @@ export interface WarehouseInput {
   address: Address
 }
 
-function warehouseRow(input: WarehouseInput) {
-  return {
+function warehouseRow(input: WarehouseInput, opts?: { includeUsedCapacity?: boolean }) {
+  const row: Record<string, unknown> = {
     name: input.name,
     code: input.code,
     manager: input.manager,
     phone: input.phone,
     working_hours: input.workingHours,
     capacity: input.capacity,
-    used_capacity: input.usedCapacity ?? 0,
     is_active: input.isActive,
     address: input.address,
   }
+  // used_capacity is derived from stock — only set on create (0), never overwrite on update
+  if (opts?.includeUsedCapacity) {
+    row.used_capacity = input.usedCapacity ?? 0
+  }
+  return row
 }
 
 export async function getAllWarehouses(): Promise<Warehouse[]> {
@@ -1390,14 +1500,23 @@ export async function getAllWarehouses(): Promise<Warehouse[]> {
 
 export async function createWarehouse(input: WarehouseInput): Promise<Warehouse> {
   await requireAdminUser()
-  const { data, error } = await supabase.from("warehouses").insert(warehouseRow(input)).select().single()
+  const { data, error } = await supabase
+    .from("warehouses")
+    .insert(warehouseRow({ ...input, usedCapacity: 0 }, { includeUsedCapacity: true }))
+    .select()
+    .single()
   if (error || !data) err(error?.message ?? "Depo oluşturulamadı")
   return mapWarehouse(data)
 }
 
 export async function updateWarehouse(id: string, input: WarehouseInput): Promise<Warehouse> {
   await requireAdminUser()
-  const { data, error } = await supabase.from("warehouses").update(warehouseRow(input)).eq("id", id).select().single()
+  const { data, error } = await supabase
+    .from("warehouses")
+    .update(warehouseRow(input))
+    .eq("id", id)
+    .select()
+    .single()
   if (error || !data) err(error?.message ?? "Depo güncellenemedi")
   return mapWarehouse(data)
 }
@@ -1419,7 +1538,13 @@ export interface AdminUserUpdate {
 }
 
 export async function updateUserByAdmin(id: string, input: AdminUserUpdate): Promise<void> {
-  await requireAdminUser()
+  const me = await requireAdminUser()
+  if (input.role === "admin" && me.id !== id) {
+    const { data: target } = await supabase.from("profiles").select("role").eq("id", id).maybeSingle()
+    if (target?.role !== "admin") {
+      err("Yeni admin ataması bu panelden yapılamaz")
+    }
+  }
   const patch: Record<string, unknown> = {
     name: input.name,
     surname: input.surname,
@@ -1453,6 +1578,15 @@ export async function adminDeleteUser(id: string): Promise<void> {
 
 // ─── Invoices ───────────────────────────────────────────────────────────────
 
+// ─── Invoices ───────────────────────────────────────────────────────────────
+
+function withOverdueStatus<T extends Invoice>(inv: T): T {
+  if (inv.status === "sent" && inv.dueDate && new Date(inv.dueDate).getTime() < Date.now()) {
+    return { ...inv, status: "overdue" }
+  }
+  return inv
+}
+
 export async function getInvoices(): Promise<Invoice[]> {
   const user = await getCurrentUser()
   let query = supabase.from("invoices").select("*").order("created_at", { ascending: false })
@@ -1460,7 +1594,7 @@ export async function getInvoices(): Promise<Invoice[]> {
 
   const { data, error } = await query
   if (error) err(error.message)
-  return (data ?? []).map(mapInvoice)
+  return (data ?? []).map(mapInvoice).map(withOverdueStatus)
 }
 
 /** Admin: all invoices across companies. */
@@ -1470,12 +1604,14 @@ export async function getAllInvoices(): Promise<(Invoice & { companyName?: strin
     .from("invoices")
     .select("*, companies(name)")
     .order("created_at", { ascending: false })
-    .limit(200)
+    .limit(500)
   if (error) err(error.message)
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    ...mapInvoice(row),
-    companyName: (row.companies as { name?: string } | null)?.name ?? "—",
-  }))
+  return (data ?? []).map((row: Record<string, unknown>) =>
+    withOverdueStatus({
+      ...mapInvoice(row),
+      companyName: (row.companies as { name?: string } | null)?.name ?? "—",
+    })
+  )
 }
 
 export async function updateInvoiceStatus(

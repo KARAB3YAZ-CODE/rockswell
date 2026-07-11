@@ -4,10 +4,21 @@ import { getPaytrConfig } from "@/lib/paytr"
 import { createInvoiceForOrder } from "@/lib/invoices"
 
 /**
- * Test-only confirmation used while PayTR credentials are not configured,
- * so the online-payment flow is demoable. Disabled once PayTR is live.
+ * Test-only confirmation used while PayTR credentials are not configured.
+ * Hard-disabled in production unless PAYTR_ALLOW_TEST_MODE=1.
  */
 export async function POST(request: Request) {
+  const allowTest =
+    process.env.PAYTR_ALLOW_TEST_MODE === "1" ||
+    process.env.NODE_ENV !== "production"
+
+  if (!allowTest) {
+    return NextResponse.json(
+      { error: "Test ödeme onayı production ortamında kapalı" },
+      { status: 403 }
+    )
+  }
+
   if (getPaytrConfig()) {
     return NextResponse.json({ error: "PayTR aktif — test onayı devre dışı" }, { status: 403 })
   }

@@ -5,8 +5,12 @@ import toast from "react-hot-toast"
 import { Shell } from "@/components/layout/shell"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
-import { createSupportTicket } from "@/lib/api"
+import { createSupportTicket, getMySupportTickets } from "@/lib/api"
+import { useData } from "@/hooks/use-data"
+import { formatDate } from "@/lib/utils"
 import { MessageSquare, Send } from "lucide-react"
 import Link from "next/link"
 
@@ -18,6 +22,13 @@ const CATEGORIES = [
   { id: "genel", label: "Genel" },
 ] as const
 
+const statusLabel: Record<string, { label: string; color: "info" | "success" | "warning" | "default" }> = {
+  open: { label: "Açık", color: "info" },
+  in_progress: { label: "İşlemde", color: "warning" },
+  closed: { label: "Kapalı", color: "default" },
+  resolved: { label: "Çözüldü", color: "success" },
+}
+
 export default function SupportPage() {
   const { isAuthenticated, loading } = useAuth()
   const [category, setCategory] = useState<string>("genel")
@@ -25,6 +36,10 @@ export default function SupportPage() {
   const [message, setMessage] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [sent, setSent] = useState(false)
+  const { data: tickets, loading: ticketsLoading, refetch } = useData(
+    () => (isAuthenticated ? getMySupportTickets() : Promise.resolve([])),
+    [isAuthenticated]
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,6 +58,7 @@ export default function SupportPage() {
       setSubject("")
       setMessage("")
       toast.success("Destek talebiniz alındı")
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Talep oluşturulamadı")
     } finally {
@@ -122,6 +138,33 @@ export default function SupportPage() {
               </Button>
             </form>
           </GlassCard>
+        )}
+
+        {isAuthenticated && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-white/70">Taleplerim</h3>
+            {ticketsLoading ? (
+              <Skeleton className="h-16 w-full rounded-xl" />
+            ) : (tickets?.length ?? 0) === 0 ? (
+              <p className="text-xs text-white/35 py-2">Henüz destek talebiniz yok.</p>
+            ) : (
+              tickets!.map((t) => {
+                const st = statusLabel[t.status] ?? statusLabel.open
+                return (
+                  <GlassCard key={t.id} intensity="light" className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-white truncate">{t.subject}</p>
+                        <p className="text-xs text-white/40 mt-0.5">{formatDate(t.createdAt)} · {t.category}</p>
+                        <p className="text-xs text-white/50 mt-1 line-clamp-2">{t.message}</p>
+                      </div>
+                      <Badge variant={st.color} size="sm">{st.label}</Badge>
+                    </div>
+                  </GlassCard>
+                )
+              })
+            )}
+          </div>
         )}
       </div>
     </Shell>

@@ -121,6 +121,7 @@ export default function AdminReportsPage() {
         })}
       </div>
 
+      {range === "all" && (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: "Bu Ay Ciro", value: report ? formatPrice(report.monthlyRevenue) : "—", icon: CalendarDays, sub: report ? `${report.monthlyOrders} sipariş` : undefined },
@@ -141,6 +142,27 @@ export default function AdminReportsPage() {
           )
         })}
       </div>
+      )}
+
+      {range !== "all" && (
+      <div className="grid grid-cols-2 gap-4">
+        {[
+          { label: "İptal (dönem)", value: report?.cancelledCount ?? "—", icon: XCircle },
+          { label: "Teklif / Taslak (dönem)", value: report?.quotationCount ?? "—", icon: FileText },
+        ].map((c) => {
+          const Icon = c.icon
+          return (
+            <GlassCard key={c.label} intensity="light" className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <Icon size={16} className="text-white/30" />
+              </div>
+              {loading ? <Skeleton className="h-7 w-20 mb-1" /> : <p className="text-xl font-bold text-white">{c.value}</p>}
+              <p className="text-xs text-white/40">{c.label}</p>
+            </GlassCard>
+          )
+        })}
+      </div>
+      )}
 
       <GlassCard intensity="light" className="p-5">
         <h3 className="text-sm font-semibold text-white mb-4">Son 6 Ay Ciro Trendi</h3>
@@ -151,7 +173,7 @@ export default function AdminReportsPage() {
             {(report?.trend ?? []).map((t) => (
               <Link
                 key={t.label}
-                href={adminPath("/orders")}
+                href={`${adminPath("/orders")}?month=${t.label}`}
                 className="flex-1 flex flex-col items-center gap-2 h-full justify-end group"
                 title={`${t.orders} sipariş · ${formatPrice(t.revenue)}`}
               >
