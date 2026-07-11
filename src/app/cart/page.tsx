@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useCartStore } from "@/lib/store"
 import { formatPrice } from "@/lib/utils"
-import { computeCartPricing, DEFAULT_DISCOUNT_RATE, TAX_RATE } from "@/lib/pricing"
+import { computeCartPricing, DEFAULT_DISCOUNT_RATE, HAVALE_EXTRA_DISCOUNT_RATE, TAX_RATE } from "@/lib/pricing"
 import { createOrder, getCustomerDiscountRate, type PaymentMethod } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useData } from "@/hooks/use-data"
@@ -35,7 +35,11 @@ export default function CartPage() {
   )
   const discountRate = fetchedRate ?? DEFAULT_DISCOUNT_RATE
   const subtotal = getSubtotal()
-  const { discount, shipping, tax, total } = computeCartPricing(subtotal, discountRate)
+  const { discount, paymentDiscount, shipping, tax, total, paymentDiscountRate } = computeCartPricing(
+    subtotal,
+    discountRate,
+    paymentMethod
+  )
 
   const checkoutItems = () =>
     items.map((i) => ({
@@ -142,7 +146,8 @@ export default function CartPage() {
 
               <div className="flex items-center gap-2 text-xs text-accent bg-accent/5 px-3 py-2 rounded-lg">
                 <AlertCircle size={14} />
-                %{discountRate} Bayi İndirimi uygulanmaktadır
+                %{discountRate} Bayi İndirimi
+                {paymentMethod === "havale" ? ` + %${HAVALE_EXTRA_DISCOUNT_RATE} Havale/EFT İndirimi` : ""} uygulanmaktadır
               </div>
 
               {items.map((item) => (
@@ -220,7 +225,7 @@ export default function CartPage() {
                       <span className="text-sm font-medium text-white">Havale / EFT</span>
                       {paymentMethod === "havale" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
                     </div>
-                    <p className="text-xs text-white/40 mt-1">Yönetici onayına gönderilir</p>
+                    <p className="text-xs text-white/40 mt-1">+%{HAVALE_EXTRA_DISCOUNT_RATE} ekstra indirim · yönetici onayı</p>
                   </button>
                   <button
                     type="button"
@@ -266,6 +271,12 @@ export default function CartPage() {
                     <span className="text-white/40">Bayi İndirimi (%{discountRate})</span>
                     <span className="text-success">-{formatPrice(discount)}</span>
                   </div>
+                  {paymentDiscountRate > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-white/40">Havale / EFT İndirimi (%{paymentDiscountRate})</span>
+                      <span className="text-success">-{formatPrice(paymentDiscount)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-white/40">Kargo</span>
                     <span className="text-white">{shipping === 0 ? "Ücretsiz" : formatPrice(shipping)}</span>

@@ -156,6 +156,8 @@ export interface OrderPricing {
   discountTotal: number
   campaignDiscount: number
   volumeDiscount: number
+  /** Havale/EFT ekstra indirim tutarı */
+  paymentDiscount: number
   shippingCost: number
   taxTotal: number
   grandTotal: number

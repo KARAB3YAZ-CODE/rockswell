@@ -137,7 +137,10 @@ export default function OrderDetailPage() {
               <GlassCard intensity="light" className="p-5 space-y-2">
                 <h2 className="text-sm font-semibold text-white mb-2">Fiyat Özeti</h2>
                 <Row label="Ara Toplam" value={formatPrice(order.pricing.subtotal)} />
-                <Row label="İndirim" value={`-${formatPrice(order.pricing.discountTotal)}`} valueClass="text-success" />
+                <Row label="Bayi İndirimi" value={`-${formatPrice(order.pricing.discountTotal)}`} valueClass="text-success" />
+                {(order.pricing.paymentDiscount ?? 0) > 0 && (
+                  <Row label="Havale / EFT İndirimi" value={`-${formatPrice(order.pricing.paymentDiscount)}`} valueClass="text-success" />
+                )}
                 <Row label="Kargo" value={order.pricing.shippingCost === 0 ? "Ücretsiz" : formatPrice(order.pricing.shippingCost)} />
                 <Row label="KDV" value={formatPrice(order.pricing.taxTotal)} />
                 <div className="border-t border-white/10 pt-2 flex justify-between">

@@ -445,7 +445,7 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   }))
 
   const subtotal = orderItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
-  const pricing = toOrderPricing(subtotal, discountRate)
+  const pricing = toOrderPricing(subtotal, discountRate, input.paymentMethod)
 
   const isOnline = input.paymentMethod === "online"
   const status: Order["status"] = input.asQuotation

@@ -101,16 +101,20 @@ export function mapOrder(row: Record<string, unknown>): Order {
     userId: String(row.user_id),
     status: row.status as Order["status"],
     items: (row.items as Order["items"]) ?? [],
-    pricing: (row.pricing as Order["pricing"]) ?? {
-      subtotal: 0,
-      discountTotal: 0,
-      campaignDiscount: 0,
-      volumeDiscount: 0,
-      shippingCost: 0,
-      taxTotal: 0,
-      grandTotal: 0,
-      currency: "TRY",
-    },
+    pricing: (() => {
+      const p = (row.pricing as Order["pricing"]) ?? {
+        subtotal: 0,
+        discountTotal: 0,
+        campaignDiscount: 0,
+        volumeDiscount: 0,
+        paymentDiscount: 0,
+        shippingCost: 0,
+        taxTotal: 0,
+        grandTotal: 0,
+        currency: "TRY",
+      }
+      return { ...p, paymentDiscount: Number(p.paymentDiscount ?? 0) }
+    })(),
     shipping: (row.shipping as Order["shipping"]) ?? {
       address: parseAddress({}),
       method: "",

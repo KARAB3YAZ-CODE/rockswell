@@ -6,6 +6,9 @@ export const DEFAULT_DISCOUNT_RATE = 25
 /** @deprecated Use DEFAULT_DISCOUNT_RATE / 100 or resolveDiscountRate() */
 export const DEALER_DISCOUNT_RATE = DEFAULT_DISCOUNT_RATE / 100
 
+/** Havale / EFT ödemelerinde ek indirim (yüzde) */
+export const HAVALE_EXTRA_DISCOUNT_RATE = 3
+
 export const TAX_RATE = 0.2
 export const SHIPPING_COST = 150
 export const FREE_SHIPPING_THRESHOLD = 5000
@@ -13,10 +16,12 @@ export const FREE_SHIPPING_THRESHOLD = 5000
 export interface CartPricing {
   subtotal: number
   discount: number
+  paymentDiscount: number
   shipping: number
   tax: number
   total: number
   discountRate: number
+  paymentDiscountRate: number
 }
 
 /** Firma veya profil iskonto oranını yüzde olarak normalize eder. */
@@ -41,23 +46,50 @@ export function dealerPriceDisplay(listPrice: number, discountRatePercent?: numb
   }
 }
 
+export type PricingPaymentMethod = "havale" | "online" | string
+
 /** Central B2B cart pricing used by both the cart UI and order creation. */
-export function computeCartPricing(subtotal: number, discountRatePercent = DEFAULT_DISCOUNT_RATE): CartPricing {
+export function computeCartPricing(
+  subtotal: number,
+  discountRatePercent = DEFAULT_DISCOUNT_RATE,
+  paymentMethod: PricingPaymentMethod = "online"
+): CartPricing {
   const discountRate = resolveDiscountRate(discountRatePercent)
   const discount = subtotal * (discountRate / 100)
+  const afterDealer = Math.max(0, subtotal - discount)
+
+  const paymentDiscountRate = paymentMethod === "havale" ? HAVALE_EXTRA_DISCOUNT_RATE : 0
+  const paymentDiscount = afterDealer * (paymentDiscountRate / 100)
+  const taxable = Math.max(0, afterDealer - paymentDiscount)
+
   const shipping = subtotal > FREE_SHIPPING_THRESHOLD || subtotal === 0 ? 0 : SHIPPING_COST
-  const tax = (subtotal - discount) * TAX_RATE
-  const total = subtotal - discount + shipping + tax
-  return { subtotal, discount, shipping, tax, total, discountRate }
+  const tax = taxable * TAX_RATE
+  const total = taxable + shipping + tax
+
+  return {
+    subtotal,
+    discount,
+    paymentDiscount,
+    shipping,
+    tax,
+    total,
+    discountRate,
+    paymentDiscountRate,
+  }
 }
 
-export function toOrderPricing(subtotal: number, discountRatePercent = DEFAULT_DISCOUNT_RATE): OrderPricing {
-  const p = computeCartPricing(subtotal, discountRatePercent)
+export function toOrderPricing(
+  subtotal: number,
+  discountRatePercent = DEFAULT_DISCOUNT_RATE,
+  paymentMethod: PricingPaymentMethod = "online"
+): OrderPricing {
+  const p = computeCartPricing(subtotal, discountRatePercent, paymentMethod)
   return {
     subtotal: p.subtotal,
     discountTotal: p.discount,
     campaignDiscount: 0,
     volumeDiscount: 0,
+    paymentDiscount: p.paymentDiscount,
     shippingCost: p.shipping,
     taxTotal: p.tax,
     grandTotal: p.total,
