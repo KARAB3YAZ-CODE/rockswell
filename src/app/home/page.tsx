@@ -371,22 +371,22 @@ export default function CustomerHomePage() {
           </GlassCard>
         </div>
 
-        {/* Admin-managed promo banners — fixed height so title/CTA never clip */}
+        {/* Admin-managed promo banners — equal tiles */}
         {promoBanners.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
             {promoBanners.map((b, i) => (
               <Link
                 key={b.id}
                 href={b.href || "/products"}
-                className="block w-full min-w-0 max-w-full"
+                className="block w-full min-w-0 max-w-full h-full"
               >
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                   className={cn(
-                    "relative w-full h-[148px] sm:h-[160px] overflow-hidden rounded-2xl border border-border bg-gradient-to-br hover:border-accent/30 transition-colors group isolate",
-                    b.gradient
+                    "relative w-full h-[160px] overflow-hidden rounded-2xl border border-border bg-gradient-to-br hover:border-accent/30 transition-colors group isolate",
+                    b.gradient || "from-accent/15 via-transparent to-transparent"
                   )}
                   style={{ backgroundColor: "var(--card)" }}
                 >
@@ -398,8 +398,15 @@ export default function CustomerHomePage() {
                       className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
                       draggable={false}
                     />
-                  ) : null}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/55 to-black/25" />
+                  ) : (
+                    <div className="absolute inset-0 opacity-[0.12] pointer-events-none" aria-hidden>
+                      <div className="absolute -right-6 -top-6 w-36 h-36 rounded-full bg-accent blur-2xl" />
+                      <div className="absolute right-6 bottom-6 text-accent/80">
+                        <MessageSquare size={48} strokeWidth={1.25} />
+                      </div>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/20" />
                   <div className="relative z-10 h-full flex flex-col justify-end gap-1.5 p-4 min-w-0">
                     {b.badge && (
                       <Badge variant="premium" size="sm" className="w-fit shrink-0">{b.badge}</Badge>
@@ -649,21 +656,21 @@ export default function CustomerHomePage() {
               </motion.div>
             )}
 
-            {/* Quick Actions (shown when empty) */}
+            {/* Quick Actions — equal compact chips */}
             {!quickSearch && batchItems.length === 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {quickActions.map((action) => {
                   const Icon = action.icon
                   return (
                     <Link
                       key={action.label}
                       href={action.href}
-                      className="flex flex-col items-center gap-2 p-4 rounded-xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/20 transition-all group"
+                      className="snap-start shrink-0 flex items-center gap-2.5 h-11 px-3.5 rounded-xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/25 transition-all group"
                     >
-                      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110", action.color)}>
-                        <Icon size={18} />
+                      <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", action.color)}>
+                        <Icon size={15} />
                       </div>
-                      <span className="text-xs text-white/60 group-hover:text-white transition-colors">{action.label}</span>
+                      <span className="text-xs font-medium text-white/65 group-hover:text-white whitespace-nowrap transition-colors">{action.label}</span>
                     </Link>
                   )
                 })}
@@ -672,7 +679,7 @@ export default function CustomerHomePage() {
           </div>
         </section>
 
-        {/* Categories */}
+        {/* Categories — equal fixed-width rail */}
         {categories.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-4">
@@ -684,25 +691,24 @@ export default function CustomerHomePage() {
                 <Button variant="ghost" size="sm" icon={<ChevronRight size={14} />}>Tümü</Button>
               </Link>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {categories.map(([cat, count], i) => (
                 <motion.div
                   key={cat}
-                  initial={{ opacity: 0, y: 15 }}
+                  initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
+                  transition={{ delay: i * 0.03 }}
+                  className="snap-start shrink-0 w-[148px]"
                 >
                   <Link
                     href={`/products?category=${encodeURIComponent(cat)}`}
-                    className="flex flex-col items-center gap-3 p-5 rounded-xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/20 hover:shadow-lg hover:shadow-accent/5 transition-all group text-center"
+                    className="flex flex-col h-[132px] p-4 rounded-2xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/25 transition-all group"
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent/20 to-accent/5 text-accent flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Grid3X3 size={20} />
+                    <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                      <Grid3X3 size={18} />
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-white/90 leading-tight">{cat}</p>
-                      <p className="text-xs text-white/40 mt-0.5">{count} ürün</p>
-                    </div>
+                    <p className="text-sm font-medium text-white/90 leading-snug line-clamp-2 flex-1">{cat}</p>
+                    <p className="text-[11px] text-white/35 mt-2 tabular-nums">{count} ürün</p>
                   </Link>
                 </motion.div>
               ))}
@@ -710,7 +716,7 @@ export default function CustomerHomePage() {
           </section>
         )}
 
-        {/* Campaigns */}
+        {/* Campaigns — equal fixed-width cards */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -722,47 +728,49 @@ export default function CustomerHomePage() {
             </Link>
           </div>
           {campaignsLoading ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+            <div className="flex gap-3 overflow-hidden">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-[168px] w-[280px] shrink-0 rounded-2xl" />)}
             </div>
           ) : activeCampaigns.length === 0 ? (
-            <div className="text-center py-10 rounded-xl bg-card border border-border">
+            <div className="text-center py-10 rounded-2xl bg-card border border-border">
               <Percent size={32} className="mx-auto text-white/20 mb-3" />
               <p className="text-sm text-white/40">Aktif kampanya bulunmuyor</p>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {activeCampaigns.map((campaign, i) => (
                 <motion.div
                   key={campaign.id}
-                  initial={{ opacity: 0, y: 15 }}
+                  initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
+                  transition={{ delay: i * 0.04 }}
+                  className="snap-start shrink-0 w-[min(100%,300px)]"
                 >
-                  <Link href="/account/campaigns">
-                    <GlassCard intensity="light" glow className="p-5 h-full group">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center">
+                  <Link href="/account/campaigns" className="block h-full">
+                    <div className="relative h-[168px] p-5 rounded-2xl bg-card border border-border overflow-hidden hover:border-accent/30 transition-colors group">
+                      <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-accent/10 blur-2xl pointer-events-none" />
+                      <div className="relative flex flex-col h-full">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
                             <Percent size={14} />
                           </div>
                           <Badge variant="premium" pulsing size="sm">
                             {campaign.type === "discount" ? `%${campaign.discountRate} İndirim` : "Kampanya"}
                           </Badge>
                         </div>
-                      </div>
-                      <h3 className="text-base font-semibold text-white group-hover:text-accent transition-colors">{campaign.name}</h3>
-                      <p className="text-sm text-white/50 mt-1.5 line-clamp-2 leading-relaxed">{campaign.description}</p>
-                      <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
-                        <span className="text-xs text-white/30">
-                          {campaign.usedCount}/{campaign.usageLimit || "∞"} kullanım
-                        </span>
-                        <div className="flex items-center gap-1.5 text-xs text-white/40">
-                          <Timer size={10} />
-                          {Math.ceil((campaign.endDate.getTime() - Date.now()) / 86400000)} gün kaldı
+                        <h3 className="text-base font-semibold text-white group-hover:text-accent transition-colors line-clamp-1">{campaign.name}</h3>
+                        <p className="text-sm text-white/45 mt-1.5 line-clamp-2 leading-snug flex-1">{campaign.description}</p>
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
+                          <span className="text-[11px] text-white/30">
+                            {campaign.usedCount}/{campaign.usageLimit || "∞"} kullanım
+                          </span>
+                          <div className="flex items-center gap-1.5 text-[11px] text-white/40">
+                            <Timer size={10} />
+                            {Math.ceil((campaign.endDate.getTime() - Date.now()) / 86400000)} gün kaldı
+                          </div>
                         </div>
                       </div>
-                    </GlassCard>
+                    </div>
                   </Link>
                 </motion.div>
               ))}
@@ -770,7 +778,7 @@ export default function CustomerHomePage() {
           )}
         </section>
 
-        {/* Vehicle Brands */}
+        {/* Vehicle Brands — equal tiles (no uneven pills) */}
         {brands.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-4">
@@ -787,20 +795,22 @@ export default function CustomerHomePage() {
                 <Button variant="ghost" size="sm" icon={<ChevronRight size={14} />}>Tümü</Button>
               </Link>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
               {brands.map((brand, i) => (
                 <motion.div
                   key={brand}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: i * 0.03 }}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(i, 16) * 0.02 }}
                 >
                   <Link
                     href={`/products?vehicleBrand=${encodeURIComponent(brand)}`}
-                    className="inline-flex items-center gap-2 pl-2 pr-4 py-1.5 rounded-xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/20 hover:text-accent transition-all text-sm font-medium text-white/60"
+                    className="flex flex-col items-center justify-center gap-2 h-[96px] px-2 rounded-2xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/25 transition-all group text-center"
                   >
-                    <VehicleBrandLogo brand={brand} size={28} className="rounded-lg p-1" />
-                    {brand}
+                    <VehicleBrandLogo brand={brand} size={36} className="rounded-xl p-1.5 bg-white/[0.04]" />
+                    <span className="text-[11px] font-medium text-white/55 group-hover:text-white truncate w-full leading-tight transition-colors">
+                      {brand}
+                    </span>
                   </Link>
                 </motion.div>
               ))}
@@ -808,7 +818,7 @@ export default function CustomerHomePage() {
           </section>
         )}
 
-        {/* Featured Products */}
+        {/* Recently viewed — equal product rail */}
         {recentlyViewed.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-4">
@@ -822,14 +832,19 @@ export default function CustomerHomePage() {
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {recentlyViewed.map((product) => (
-                <Link key={product.id} href={`/products/${product.id}`}>
-                  <GlassCard intensity="light" className="p-4 h-full hover:bg-white/[0.06] transition-all">
-                    <p className="text-sm font-medium text-white line-clamp-2">{product.name}</p>
-                    <p className="text-[10px] text-white/30 font-mono mt-1">{product.sku}</p>
-                    <p className="text-sm font-bold text-accent mt-2">{formatPrice(product.basePrice)}</p>
-                  </GlassCard>
+                <Link
+                  key={product.id}
+                  href={`/products/${product.id}`}
+                  className="snap-start shrink-0 w-[200px] rounded-2xl bg-card border border-border p-3.5 hover:border-accent/25 hover:bg-white/[0.03] transition-all group"
+                >
+                  <div className="aspect-[4/3] rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center mb-3 overflow-hidden">
+                    <Package size={28} className="text-white/15 group-hover:text-accent/35 transition-colors" />
+                  </div>
+                  <p className="text-sm font-medium text-white line-clamp-2 min-h-[2.5rem] leading-snug">{product.name}</p>
+                  <p className="text-[10px] text-white/30 font-mono mt-1 truncate">{product.sku}</p>
+                  <p className="text-sm font-bold text-accent mt-2">{formatPrice(product.basePrice)}</p>
                 </Link>
               ))}
             </div>
@@ -852,40 +867,39 @@ export default function CustomerHomePage() {
                 <Button variant="ghost" size="sm" icon={<ChevronRight size={14} />}>Tümü</Button>
               </Link>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {featuredProducts.map((product, i) => (
                 <motion.div
                   key={product.id}
-                  initial={{ opacity: 0, y: 15 }}
+                  initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
+                  transition={{ delay: i * 0.04 }}
+                  className="snap-start shrink-0 w-[220px]"
                 >
-                  <Link href={`/products/${product.id}`}>
-                    <GlassCard intensity="light" className="p-4 h-full group hover:bg-white/[0.06] transition-all">
-                      <div className="relative w-full aspect-square rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center mb-3 overflow-hidden group-hover:border-accent/20 transition-colors">
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package size={36} className="text-white/20 group-hover:text-accent/30 transition-colors" />
-                        </div>
+                  <Link href={`/products/${product.id}`} className="block h-full">
+                    <div className="h-full rounded-2xl bg-card border border-border p-3.5 hover:border-accent/25 hover:bg-white/[0.03] transition-all group">
+                      <div className="relative aspect-[4/3] rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center mb-3 overflow-hidden group-hover:border-accent/20 transition-colors">
+                        <Package size={32} className="text-white/15 group-hover:text-accent/35 transition-colors" />
                         <Badge variant="premium" size="sm" className="absolute top-2 left-2">Öne Çıkan</Badge>
                       </div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="text-[10px] text-white/30 font-mono bg-white/[0.04] px-1.5 py-0.5 rounded">{product.brand}</span>
-                        <span className="text-[9px] text-white/20 px-1.5 py-0.5 rounded bg-white/[0.04]">{product.category}</span>
+                      <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
+                        <span className="text-[10px] text-white/30 font-mono bg-white/[0.04] px-1.5 py-0.5 rounded truncate max-w-[50%]">{product.brand}</span>
+                        <span className="text-[9px] text-white/20 px-1.5 py-0.5 rounded bg-white/[0.04] truncate">{product.category}</span>
                       </div>
-                      <p className="text-sm font-medium text-white/90 truncate group-hover:text-white transition-colors">{product.name}</p>
-                      <p className="text-xs text-white/30 mt-0.5 font-mono">{product.sku}</p>
+                      <p className="text-sm font-medium text-white/90 line-clamp-2 min-h-[2.5rem] leading-snug group-hover:text-white transition-colors">{product.name}</p>
+                      <p className="text-[10px] text-white/30 mt-1 font-mono truncate">{product.sku}</p>
                       <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-                        <p className="text-base font-bold text-accent">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate, product.customerPriceApplied).dealerPrice)}</p>
+                        <p className="text-sm font-bold text-accent">{formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate, product.customerPriceApplied).dealerPrice)}</p>
                         {product.stock[0]?.available > 0 ? (
                           <span className="flex items-center gap-1 text-[10px] text-success">
                             <span className="w-1 h-1 rounded-full bg-success" />
                             Stokta
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1 text-[10px] text-danger">Tükendi</span>
+                          <span className="text-[10px] text-danger">Tükendi</span>
                         )}
                       </div>
-                    </GlassCard>
+                    </div>
                   </Link>
                 </motion.div>
               ))}
