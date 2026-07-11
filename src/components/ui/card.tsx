@@ -1,6 +1,5 @@
 "use client"
 
-import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 
 interface CardProps {
@@ -14,9 +13,8 @@ interface CardProps {
 }
 
 export function Card({ children, className, hover, glow, glass, gradient, onClick }: CardProps) {
-  const Comp = motion.div
   return (
-    <Comp
+    <div
       onClick={onClick}
       className={cn(
         "relative rounded-2xl p-6 overflow-hidden",
@@ -26,13 +24,9 @@ export function Card({ children, className, hover, glow, glass, gradient, onClic
         gradient && "gradient-border",
         className
       )}
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
     >
       {children}
-    </Comp>
+    </div>
   )
 }
 

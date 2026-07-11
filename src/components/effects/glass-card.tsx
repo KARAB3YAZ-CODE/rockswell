@@ -1,7 +1,6 @@
 "use client"
 
 import { useRef } from "react"
-import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 
 interface GlassCardProps {
@@ -45,21 +44,17 @@ export function GlassCard({
   }
 
   return (
-    <motion.div
+    <div
       ref={cardRef}
       onMouseMove={tilt ? handleMouseMove : undefined}
       onMouseLeave={tilt ? handleMouseLeave : undefined}
       className={cn(
-        "relative rounded-2xl p-6 transition-all duration-300",
+        "relative rounded-2xl p-6",
         glassStyles[intensity],
         glow && "shadow-lg shadow-accent/5 hover:shadow-xl hover:shadow-accent/10",
         borderGradient && "gradient-border",
         className
       )}
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.6, ease: [0.25, 0.1, 0.25, 1] }}
     >
       {noise && (
         <div
@@ -70,6 +65,6 @@ export function GlassCard({
         />
       )}
       {children}
-    </motion.div>
+    </div>
   )
 }
