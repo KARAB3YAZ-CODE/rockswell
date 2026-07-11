@@ -5,21 +5,31 @@ import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
 import { getAdminReports } from "@/lib/api"
-import { formatPrice } from "@/lib/utils"
+import { formatPrice, cn } from "@/lib/utils"
 import { SectionHeader, orderStatusLabels } from "@/components/admin/ui"
-import { BarChart3, ShoppingBag, Clock, DollarSign } from "lucide-react"
+import {
+  BarChart3,
+  ShoppingBag,
+  Clock,
+  DollarSign,
+  CalendarDays,
+  TrendingUp,
+  XCircle,
+  FileText,
+} from "lucide-react"
 
 export default function AdminReportsPage() {
   const { data: report, loading } = useData(() => getAdminReports(), [])
+  const maxTrend = Math.max(1, ...(report?.trend.map((t) => t.revenue) ?? [1]))
 
   return (
     <div className="space-y-6">
-      <SectionHeader icon={BarChart3} tone="accent" title="Raporlar" subtitle="Gerçek sipariş ve ciro özeti" />
+      <SectionHeader icon={BarChart3} tone="accent" title="Raporlar & Analiz" subtitle="Sipariş, ciro ve dönemsel performans" />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Ciro", value: report ? formatPrice(report.revenue) : "—", icon: DollarSign },
-          { label: "Sipariş", value: report?.orderCount ?? "—", icon: ShoppingBag },
+          { label: "Toplam Ciro", value: report ? formatPrice(report.revenue) : "—", icon: DollarSign },
+          { label: "Toplam Sipariş", value: report?.orderCount ?? "—", icon: ShoppingBag },
           { label: "Onay Bekleyen", value: report?.pendingApproval ?? "—", icon: Clock },
           { label: "Ort. Sipariş", value: report ? formatPrice(report.avgOrderValue) : "—", icon: BarChart3 },
         ].map((c) => {
@@ -35,6 +45,48 @@ export default function AdminReportsPage() {
           )
         })}
       </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Bu Ay Ciro", value: report ? formatPrice(report.monthlyRevenue) : "—", icon: CalendarDays, sub: report ? `${report.monthlyOrders} sipariş` : undefined },
+          { label: "Son 30 Gün Ciro", value: report ? formatPrice(report.last30DaysRevenue) : "—", icon: TrendingUp, sub: report ? `${report.last30DaysOrders} sipariş` : undefined },
+          { label: "İptal", value: report?.cancelledCount ?? "—", icon: XCircle },
+          { label: "Teklif / Taslak", value: report?.quotationCount ?? "—", icon: FileText },
+        ].map((c) => {
+          const Icon = c.icon
+          return (
+            <GlassCard key={c.label} intensity="light" className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <Icon size={16} className="text-white/30" />
+              </div>
+              {loading ? <Skeleton className="h-7 w-20 mb-1" /> : <p className="text-xl font-bold text-white">{c.value}</p>}
+              <p className="text-xs text-white/40">{c.label}</p>
+              {c.sub && <p className="text-[11px] text-white/25 mt-0.5">{c.sub}</p>}
+            </GlassCard>
+          )
+        })}
+      </div>
+
+      <GlassCard intensity="light" className="p-5">
+        <h3 className="text-sm font-semibold text-white mb-4">Son 6 Ay Ciro Trendi</h3>
+        {loading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <div className="flex items-end gap-2 h-40">
+            {(report?.trend ?? []).map((t) => (
+              <div key={t.label} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                <span className="text-[10px] text-white/35 tabular-nums">{t.revenue > 0 ? formatPrice(t.revenue) : "—"}</span>
+                <div
+                  className={cn("w-full rounded-t-md bg-accent/80 min-h-[4px] transition-all")}
+                  style={{ height: `${Math.max(4, (t.revenue / maxTrend) * 100)}%` }}
+                  title={`${t.orders} sipariş`}
+                />
+                <span className="text-xs text-white/50">{t.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
 
       <div className="grid lg:grid-cols-2 gap-4">
         <GlassCard intensity="light" className="p-5">

@@ -1013,12 +1013,21 @@ export interface AdminReportSummary {
   avgOrderValue: number
   byCompany: { companyId: string; companyName: string; orders: number; revenue: number }[]
   byStatus: { status: string; count: number }[]
+  monthlyRevenue: number
+  monthlyOrders: number
+  last30DaysRevenue: number
+  last30DaysOrders: number
+  cancelledCount: number
+  quotationCount: number
+  trend: { label: string; revenue: number; orders: number }[]
 }
+
+const PAID_STATUSES = ["confirmed", "processing", "shipped", "delivered"]
 
 export async function getAdminReports(): Promise<AdminReportSummary> {
   await requireAuth()
   const [{ data: orders }, { data: companies }] = await Promise.all([
-    supabase.from("orders").select("id, company_id, status, pricing"),
+    supabase.from("orders").select("id, company_id, status, pricing, created_at"),
     supabase.from("companies").select("id, name"),
   ])
 
@@ -1027,19 +1036,60 @@ export async function getAdminReports(): Promise<AdminReportSummary> {
   const byStatusMap = new Map<string, number>()
   let revenue = 0
   let pendingApproval = 0
+  let paidOrders = 0
+  let cancelledCount = 0
+  let quotationCount = 0
+  let monthlyRevenue = 0
+  let monthlyOrders = 0
+  let last30DaysRevenue = 0
+  let last30DaysOrders = 0
+
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const day30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const trendMap = new Map<string, { revenue: number; orders: number }>()
+
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    trendMap.set(key, { revenue: 0, orders: 0 })
+  }
 
   for (const row of orders ?? []) {
     const status = String(row.status)
     byStatusMap.set(status, (byStatusMap.get(status) ?? 0) + 1)
     if (status === "pending_approval") pendingApproval += 1
+    if (status === "cancelled") cancelledCount += 1
+    if (status === "quotation" || status === "draft") quotationCount += 1
+
     const total = Number((row.pricing as { grandTotal?: number } | null)?.grandTotal ?? 0)
-    if (["confirmed", "processing", "shipped", "delivered"].includes(status)) {
+    const isPaid = PAID_STATUSES.includes(status)
+    if (isPaid) {
       revenue += total
+      paidOrders += 1
     }
+
+    const created = new Date(String(row.created_at))
+    if (created >= monthStart) {
+      monthlyOrders += 1
+      if (isPaid) monthlyRevenue += total
+    }
+    if (created >= day30) {
+      last30DaysOrders += 1
+      if (isPaid) last30DaysRevenue += total
+    }
+
+    const trendKey = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, "0")}`
+    const trend = trendMap.get(trendKey)
+    if (trend) {
+      trend.orders += 1
+      if (isPaid) trend.revenue += total
+    }
+
     const cid = String(row.company_id)
     const cur = byCompanyMap.get(cid) ?? { orders: 0, revenue: 0 }
     cur.orders += 1
-    if (["confirmed", "processing", "shipped", "delivered"].includes(status)) cur.revenue += total
+    if (isPaid) cur.revenue += total
     byCompanyMap.set(cid, cur)
   }
 
@@ -1054,14 +1104,90 @@ export async function getAdminReports(): Promise<AdminReportSummary> {
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 20)
 
+  const monthLabels = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
+  const trend = [...trendMap.entries()].map(([key, v]) => {
+    const month = Number(key.split("-")[1]) - 1
+    return { label: monthLabels[month] ?? key, revenue: v.revenue, orders: v.orders }
+  })
+
   return {
     revenue,
     orderCount,
     pendingApproval,
-    avgOrderValue: orderCount ? revenue / Math.max(1, byCompany.reduce((s, c) => s + (c.revenue > 0 ? c.orders : 0), 0) || orderCount) : 0,
+    avgOrderValue: paidOrders > 0 ? revenue / paidOrders : 0,
     byCompany,
     byStatus: [...byStatusMap.entries()].map(([status, count]) => ({ status, count })),
+    monthlyRevenue,
+    monthlyOrders,
+    last30DaysRevenue,
+    last30DaysOrders,
+    cancelledCount,
+    quotationCount,
+    trend,
   }
+}
+
+// ─── Site settings (maintenance / price update) ─────────────────────────────
+
+export interface SiteSettings {
+  maintenanceEnabled: boolean
+  maintenanceMessage: string
+  priceUpdateEnabled: boolean
+  priceUpdateDate: string | null
+  priceUpdateMessage: string
+  updatedAt: string | null
+}
+
+const defaultSiteSettings: SiteSettings = {
+  maintenanceEnabled: false,
+  maintenanceMessage: "Sistemimiz şu an bakımda. Lütfen daha sonra tekrar deneyin.",
+  priceUpdateEnabled: false,
+  priceUpdateDate: null,
+  priceUpdateMessage: "",
+  updatedAt: null,
+}
+
+function mapSiteSettings(row: Record<string, unknown> | null): SiteSettings {
+  if (!row) return { ...defaultSiteSettings }
+  return {
+    maintenanceEnabled: Boolean(row.maintenance_enabled),
+    maintenanceMessage: String(row.maintenance_message ?? defaultSiteSettings.maintenanceMessage),
+    priceUpdateEnabled: Boolean(row.price_update_enabled),
+    priceUpdateDate: row.price_update_date ? String(row.price_update_date).slice(0, 10) : null,
+    priceUpdateMessage: String(row.price_update_message ?? ""),
+    updatedAt: row.updated_at ? String(row.updated_at) : null,
+  }
+}
+
+export async function getSiteSettings(): Promise<SiteSettings> {
+  await requireAuth()
+  const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle()
+  if (error) err(error.message)
+  return mapSiteSettings(data)
+}
+
+export async function updateSiteSettings(input: Partial<SiteSettings>): Promise<SiteSettings> {
+  await requireAuth()
+  const user = await getCurrentUser()
+  if (user.role !== "admin") err("Bu işlem için admin yetkisi gerekir")
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+    updated_by: user.id,
+  }
+  if (input.maintenanceEnabled !== undefined) patch.maintenance_enabled = input.maintenanceEnabled
+  if (input.maintenanceMessage !== undefined) patch.maintenance_message = input.maintenanceMessage
+  if (input.priceUpdateEnabled !== undefined) patch.price_update_enabled = input.priceUpdateEnabled
+  if (input.priceUpdateDate !== undefined) patch.price_update_date = input.priceUpdateDate || null
+  if (input.priceUpdateMessage !== undefined) patch.price_update_message = input.priceUpdateMessage
+
+  const { data, error } = await supabase
+    .from("site_settings")
+    .update(patch)
+    .eq("id", 1)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Ayarlar kaydedilemedi")
+  return mapSiteSettings(data)
 }
 
 // ─── Warehouses ─────────────────────────────────────────────────────────────
