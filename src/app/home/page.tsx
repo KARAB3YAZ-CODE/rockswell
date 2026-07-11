@@ -230,8 +230,8 @@ export default function CustomerHomePage() {
     <Shell>
       <div className="space-y-8 pb-8 w-full max-w-full min-w-0 overflow-x-hidden">
 
-        {/* Hero Banner — fixed height frame; image never drives layout width */}
-        <div className="relative isolate w-full max-w-full min-w-0 overflow-hidden rounded-2xl h-[200px] sm:h-[280px] lg:h-[340px] group">
+        {/* Hero Banner — slightly taller frame */}
+        <div className="relative isolate w-full max-w-full min-w-0 overflow-hidden rounded-2xl h-[240px] sm:h-[320px] lg:h-[400px] group">
           <Glow color="rgba(57, 255, 20," size={200} opacity={0.06} blur={60} className="top-1/3 left-1/4 pointer-events-none" />
           <AnimatePresence mode="wait">
             <motion.div
@@ -251,11 +251,11 @@ export default function CustomerHomePage() {
                 <img
                   src={slides[currentSlide].imageUrl}
                   alt=""
-                  className="absolute inset-0 !max-w-none w-full h-full object-cover object-center pointer-events-none select-none"
+                  className="absolute inset-0 z-0 w-full h-full object-cover object-center pointer-events-none select-none"
                   draggable={false}
                 />
               ) : null}
-              <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/25" />
+              <div className="absolute inset-0 z-[1] bg-gradient-to-r from-black/80 via-black/45 to-black/20" />
               <div className="relative z-10 h-full flex flex-col justify-center p-5 sm:p-8 lg:p-12 min-w-0 max-w-full overflow-hidden">
                 <div className="flex items-center gap-3 mb-3 sm:mb-4">
                   <Badge variant="premium" className="w-fit">
@@ -266,7 +266,7 @@ export default function CustomerHomePage() {
                 <h2 className="text-xl sm:text-2xl lg:text-4xl font-bold text-white max-w-xl leading-tight line-clamp-2">
                   {slides[currentSlide]?.title}
                 </h2>
-                <p className="mt-2 sm:mt-3 text-white/60 max-w-lg text-sm lg:text-base leading-relaxed line-clamp-2">
+                <p className="mt-2 sm:mt-3 text-white/70 max-w-lg text-sm lg:text-base leading-relaxed line-clamp-2">
                   {slides[currentSlide]?.subtitle}
                 </p>
                 <Link href={slides[currentSlide]?.href || "/products"} className="mt-4 sm:mt-6 w-fit max-w-full">
@@ -294,22 +294,21 @@ export default function CustomerHomePage() {
           </div>
         </div>
 
-        {/* Welcome + discount + credit */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-stretch">
-          <GlassCard intensity="medium" className="p-5 md:col-span-2 relative overflow-hidden">
-            <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-accent/5 blur-2xl pointer-events-none" />
-            <div className="relative flex items-start gap-4">
-              <div className="w-14 h-14 shrink-0 rounded-2xl bg-gradient-to-br from-accent to-accent/70 flex items-center justify-center text-xl font-bold text-black shadow-lg shadow-accent/25">
+        {/* Welcome + discount + credit — compact */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5 items-stretch">
+          <GlassCard intensity="medium" className="p-3.5 md:col-span-2 relative overflow-hidden">
+            <div className="relative flex items-center gap-3">
+              <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-accent to-accent/70 flex items-center justify-center text-sm font-bold text-black shadow-md shadow-accent/20">
                 {user ? `${user.name[0]}${user.surname[0]}` : "R"}
               </div>
-              <div className="flex-1 min-w-0 pt-0.5">
-                <p className="text-[11px] uppercase tracking-wider text-white/35 mb-1">Firma paneli</p>
-                <h1 className="text-xl font-bold text-white leading-snug m-0">
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] uppercase tracking-wider text-white/35 leading-none mb-0.5">Firma paneli</p>
+                <h1 className="text-base font-bold text-white leading-tight m-0 truncate">
                   Hoş geldin, {user?.name ?? "…"}
                 </h1>
-                <p className="text-sm text-white/55 mt-1 truncate">{company?.name ?? "—"}</p>
-                <div className="flex items-center gap-2 mt-3 flex-wrap">
-                  <span className="inline-flex items-center gap-1.5 text-xs text-white/45">
+                <div className="flex items-center gap-2 mt-1 flex-wrap min-w-0">
+                  <p className="text-xs text-white/50 truncate">{company?.name ?? "—"}</p>
+                  <span className="inline-flex items-center gap-1 text-[11px] text-white/40">
                     <span className={cn("w-1.5 h-1.5 rounded-full", user?.isActive ? "bg-success" : "bg-white/30")} />
                     {roleLabel(user?.role)}
                   </span>
@@ -320,43 +319,38 @@ export default function CustomerHomePage() {
               </div>
               <Link
                 href="/account"
-                className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-xl border border-white/10 text-xs font-medium text-white/55 hover:text-white hover:border-accent/30 hover:bg-white/[0.03] transition-colors"
+                className="shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-lg border border-white/10 text-[11px] font-medium text-white/55 hover:text-white hover:border-accent/30 hover:bg-white/[0.03] transition-colors"
               >
                 Profil
-                <ChevronRight size={14} />
+                <ChevronRight size={12} />
               </Link>
             </div>
           </GlassCard>
 
-          <GlassCard intensity="light" className="p-5 relative overflow-hidden border-accent/20">
-            <Glow color="rgba(57, 255, 20," size={120} opacity={0.1} blur={50} className="top-0 right-0" />
-            <div className="relative h-full flex flex-col">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-medium text-white/40 uppercase tracking-wider">İskonto oranınız</span>
-                <Percent size={15} className="text-accent/60" />
+          <GlassCard intensity="light" className="p-3.5 relative overflow-hidden border-accent/20">
+            <div className="relative flex items-center justify-between gap-3 h-full">
+              <div className="min-w-0">
+                <span className="text-[10px] font-medium text-white/40 uppercase tracking-wider">İskonto oranınız</span>
+                <p className="text-2xl font-bold text-accent tracking-tight leading-none mt-1">
+                  %{companyDiscountRate}
+                </p>
               </div>
-              <p className="text-3xl font-bold text-accent tracking-tight leading-none">
-                %{companyDiscountRate}
-              </p>
-              <p className="text-xs text-white/40 mt-auto pt-3">
-                Liste fiyatına uygulanan bayi iskontosu
-              </p>
+              <Percent size={16} className="text-accent/50 shrink-0" />
             </div>
           </GlassCard>
 
-          <GlassCard intensity="light" glow className="p-5 relative overflow-hidden">
-            <Glow color="rgba(57, 255, 20," size={120} opacity={0.06} blur={50} className="top-0 right-0" />
-            <div className="relative h-full flex flex-col">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-medium text-white/40 uppercase tracking-wider">Kredi limiti</span>
-                <CreditCard size={15} className="text-white/25" />
+          <GlassCard intensity="light" className="p-3.5 relative overflow-hidden">
+            <div className="relative h-full flex flex-col justify-center">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-medium text-white/40 uppercase tracking-wider">Kredi limiti</span>
+                <CreditCard size={14} className="text-white/25" />
               </div>
-              <p className="text-2xl font-bold text-white leading-none">{formatPrice(creditLimit)}</p>
-              <div className="flex items-center justify-between mt-2.5">
-                <span className="text-xs text-white/40">Kullanılan {formatPrice(creditUsed)}</span>
-                <span className="text-xs text-accent font-medium">%{Math.round(creditPercent)}</span>
+              <p className="text-lg font-bold text-white leading-none mt-1">{formatPrice(creditLimit)}</p>
+              <div className="flex items-center justify-between mt-1.5 gap-2">
+                <span className="text-[10px] text-white/40 truncate">Kullanılan {formatPrice(creditUsed)}</span>
+                <span className="text-[10px] text-accent font-medium shrink-0">%{Math.round(creditPercent)}</span>
               </div>
-              <div className="relative h-1.5 bg-white/5 rounded-full mt-2 overflow-hidden">
+              <div className="relative h-1 bg-white/5 rounded-full mt-1.5 overflow-hidden">
                 <motion.div
                   className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-accent to-accent/60"
                   initial={{ width: 0 }}
@@ -364,14 +358,11 @@ export default function CustomerHomePage() {
                   transition={{ duration: 1, delay: 0.3 }}
                 />
               </div>
-              <p className="text-[11px] text-white/30 mt-auto pt-2">
-                Kalan {formatPrice(Math.max(0, creditLimit - creditUsed))}
-              </p>
             </div>
           </GlassCard>
         </div>
 
-        {/* Admin-managed promo banners — equal tiles */}
+        {/* Admin-managed promo banners — image + readable gradient overlay */}
         {promoBanners.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
             {promoBanners.map((b, i) => (
@@ -384,10 +375,7 @@ export default function CustomerHomePage() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className={cn(
-                    "relative w-full h-[160px] overflow-hidden rounded-2xl border border-border bg-gradient-to-br hover:border-accent/30 transition-colors group isolate",
-                    b.gradient || "from-accent/15 via-transparent to-transparent"
-                  )}
+                  className="relative w-full h-[180px] overflow-hidden rounded-2xl border border-border hover:border-accent/30 transition-colors group isolate"
                   style={{ backgroundColor: "var(--card)" }}
                 >
                   {b.imageUrl ? (
@@ -395,29 +383,36 @@ export default function CustomerHomePage() {
                     <img
                       src={b.imageUrl}
                       alt=""
-                      className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
+                      className="absolute inset-0 z-0 w-full h-full object-cover object-center pointer-events-none select-none"
                       draggable={false}
                     />
                   ) : (
-                    <div className="absolute inset-0 opacity-[0.12] pointer-events-none" aria-hidden>
-                      <div className="absolute -right-6 -top-6 w-36 h-36 rounded-full bg-accent blur-2xl" />
-                      <div className="absolute right-6 bottom-6 text-accent/80">
-                        <MessageSquare size={48} strokeWidth={1.25} />
+                    <div
+                      className={cn(
+                        "absolute inset-0 z-0 bg-gradient-to-br",
+                        b.gradient || "from-accent/25 via-accent/5 to-transparent"
+                      )}
+                      aria-hidden
+                    >
+                      <div className="absolute right-5 bottom-5 text-accent/35">
+                        <MessageSquare size={40} strokeWidth={1.25} />
                       </div>
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/20" />
-                  <div className="relative z-10 h-full flex flex-col justify-end gap-1.5 p-4 min-w-0">
+                  {/* Gradient so image stays visible but text stays readable */}
+                  <div className="absolute inset-0 z-[1] bg-gradient-to-t from-black via-black/55 to-black/10" />
+                  <div className="absolute inset-0 z-[1] bg-gradient-to-r from-black/50 via-transparent to-transparent" />
+                  <div className="relative z-10 h-full flex flex-col justify-end gap-1 p-4 min-w-0">
                     {b.badge && (
-                      <Badge variant="premium" size="sm" className="w-fit shrink-0">{b.badge}</Badge>
+                      <Badge variant="premium" size="sm" className="w-fit shrink-0 shadow-sm">{b.badge}</Badge>
                     )}
-                    <p className="text-sm font-bold text-white leading-snug group-hover:text-accent transition-colors line-clamp-1">
+                    <p className="text-sm font-bold text-white leading-snug drop-shadow-sm group-hover:text-accent transition-colors line-clamp-1">
                       {b.title}
                     </p>
                     {b.subtitle ? (
-                      <p className="text-xs text-white/45 leading-snug line-clamp-1">{b.subtitle}</p>
+                      <p className="text-xs text-white/75 leading-snug line-clamp-2 drop-shadow-sm">{b.subtitle}</p>
                     ) : null}
-                    <span className="inline-flex items-center gap-1 text-[11px] text-accent shrink-0">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent shrink-0">
                       {b.cta || "İncele"} <ArrowRight size={12} />
                     </span>
                   </div>
@@ -679,7 +674,7 @@ export default function CustomerHomePage() {
           </div>
         </section>
 
-        {/* Categories — equal fixed-width rail */}
+        {/* Categories — full grid, all visible */}
         {categories.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-4">
@@ -691,24 +686,25 @@ export default function CustomerHomePage() {
                 <Button variant="ghost" size="sm" icon={<ChevronRight size={14} />}>Tümü</Button>
               </Link>
             </div>
-            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
               {categories.map(([cat, count], i) => (
                 <motion.div
                   key={cat}
-                  initial={{ opacity: 0, y: 12 }}
+                  initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="snap-start shrink-0 w-[148px]"
+                  transition={{ delay: Math.min(i, 12) * 0.03 }}
                 >
                   <Link
                     href={`/products?category=${encodeURIComponent(cat)}`}
-                    className="flex flex-col h-[132px] p-4 rounded-2xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/25 transition-all group"
+                    className="flex items-center gap-3 h-[72px] p-3 rounded-xl bg-card border border-border hover:bg-white/[0.04] hover:border-accent/25 transition-all group"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                      <Grid3X3 size={18} />
+                    <div className="w-9 h-9 shrink-0 rounded-lg bg-accent/10 text-accent flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <Grid3X3 size={16} />
                     </div>
-                    <p className="text-sm font-medium text-white/90 leading-snug line-clamp-2 flex-1">{cat}</p>
-                    <p className="text-[11px] text-white/35 mt-2 tabular-nums">{count} ürün</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-white/90 leading-snug line-clamp-2">{cat}</p>
+                      <p className="text-[11px] text-white/35 mt-0.5 tabular-nums">{count} ürün</p>
+                    </div>
                   </Link>
                 </motion.div>
               ))}
@@ -716,7 +712,7 @@ export default function CustomerHomePage() {
           </section>
         )}
 
-        {/* Campaigns — equal fixed-width cards */}
+        {/* Campaigns — taller cards so description stays visible */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -728,8 +724,8 @@ export default function CustomerHomePage() {
             </Link>
           </div>
           {campaignsLoading ? (
-            <div className="flex gap-3 overflow-hidden">
-              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-[168px] w-[280px] shrink-0 rounded-2xl" />)}
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-[200px] rounded-2xl" />)}
             </div>
           ) : activeCampaigns.length === 0 ? (
             <div className="text-center py-10 rounded-2xl bg-card border border-border">
@@ -737,19 +733,18 @@ export default function CustomerHomePage() {
               <p className="text-sm text-white/40">Aktif kampanya bulunmuyor</p>
             </div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {activeCampaigns.map((campaign, i) => (
                 <motion.div
                   key={campaign.id}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.04 }}
-                  className="snap-start shrink-0 w-[min(100%,300px)]"
                 >
                   <Link href="/account/campaigns" className="block h-full">
-                    <div className="relative h-[168px] p-5 rounded-2xl bg-card border border-border overflow-hidden hover:border-accent/30 transition-colors group">
+                    <div className="relative min-h-[200px] h-full p-5 rounded-2xl bg-card border border-border overflow-hidden hover:border-accent/30 transition-colors group flex flex-col">
                       <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-accent/10 blur-2xl pointer-events-none" />
-                      <div className="relative flex flex-col h-full">
+                      <div className="relative flex flex-col flex-1 min-h-0">
                         <div className="flex items-center gap-2 mb-3">
                           <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
                             <Percent size={14} />
@@ -758,13 +753,15 @@ export default function CustomerHomePage() {
                             {campaign.type === "discount" ? `%${campaign.discountRate} İndirim` : "Kampanya"}
                           </Badge>
                         </div>
-                        <h3 className="text-base font-semibold text-white group-hover:text-accent transition-colors line-clamp-1">{campaign.name}</h3>
-                        <p className="text-sm text-white/45 mt-1.5 line-clamp-2 leading-snug flex-1">{campaign.description}</p>
-                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-                          <span className="text-[11px] text-white/30">
+                        <h3 className="text-base font-semibold text-white group-hover:text-accent transition-colors line-clamp-2">{campaign.name}</h3>
+                        <p className="text-sm text-white/65 mt-2 line-clamp-3 leading-relaxed flex-1">
+                          {campaign.description || "Kampanya detaylarını inceleyin."}
+                        </p>
+                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
+                          <span className="text-[11px] text-white/35">
                             {campaign.usedCount}/{campaign.usageLimit || "∞"} kullanım
                           </span>
-                          <div className="flex items-center gap-1.5 text-[11px] text-white/40">
+                          <div className="flex items-center gap-1.5 text-[11px] text-white/45">
                             <Timer size={10} />
                             {Math.ceil((campaign.endDate.getTime() - Date.now()) / 86400000)} gün kaldı
                           </div>
@@ -839,12 +836,21 @@ export default function CustomerHomePage() {
                   href={`/products/${product.id}`}
                   className="snap-start shrink-0 w-[200px] rounded-2xl bg-card border border-border p-3.5 hover:border-accent/25 hover:bg-white/[0.03] transition-all group"
                 >
-                  <div className="aspect-[4/3] rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center mb-3 overflow-hidden">
-                    <Package size={28} className="text-white/15 group-hover:text-accent/35 transition-colors" />
+                  <div
+                    className="aspect-[4/3] rounded-xl bg-white/[0.03] border border-white/5 mb-3 overflow-hidden bg-contain bg-center bg-no-repeat"
+                    style={product.images?.[0] ? { backgroundImage: `url(${product.images[0]})` } : undefined}
+                  >
+                    {!product.images?.[0] && (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Package size={28} className="text-white/15 group-hover:text-accent/35 transition-colors" />
+                      </div>
+                    )}
                   </div>
                   <p className="text-sm font-medium text-white line-clamp-2 min-h-[2.5rem] leading-snug">{product.name}</p>
                   <p className="text-[10px] text-white/30 font-mono mt-1 truncate">{product.sku}</p>
-                  <p className="text-sm font-bold text-accent mt-2">{formatPrice(product.basePrice)}</p>
+                  <p className="text-sm font-bold text-accent mt-2">
+                    {formatPrice(dealerPriceDisplay(product.basePrice, companyDiscountRate, product.customerPriceApplied).dealerPrice)}
+                  </p>
                 </Link>
               ))}
             </div>
@@ -878,8 +884,15 @@ export default function CustomerHomePage() {
                 >
                   <Link href={`/products/${product.id}`} className="block h-full">
                     <div className="h-full rounded-2xl bg-card border border-border p-3.5 hover:border-accent/25 hover:bg-white/[0.03] transition-all group">
-                      <div className="relative aspect-[4/3] rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center mb-3 overflow-hidden group-hover:border-accent/20 transition-colors">
-                        <Package size={32} className="text-white/15 group-hover:text-accent/35 transition-colors" />
+                      <div
+                        className="relative aspect-[4/3] rounded-xl bg-white/[0.03] border border-white/5 mb-3 overflow-hidden bg-contain bg-center bg-no-repeat group-hover:border-accent/20 transition-colors"
+                        style={product.images?.[0] ? { backgroundImage: `url(${product.images[0]})` } : undefined}
+                      >
+                        {!product.images?.[0] && (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package size={32} className="text-white/15 group-hover:text-accent/35 transition-colors" />
+                          </div>
+                        )}
                         <Badge variant="premium" size="sm" className="absolute top-2 left-2">Öne Çıkan</Badge>
                       </div>
                       <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
