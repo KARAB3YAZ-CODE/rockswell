@@ -44,6 +44,15 @@ async function authedFetch<T = unknown>(path: string, init: RequestInit = {}): P
   return json as T
 }
 
+export async function askAdminAssistant(
+  messages: { role: "user" | "assistant"; content: string }[]
+): Promise<{ reply: string; actions: string[] }> {
+  return authedFetch("/api/admin/assistant", {
+    method: "POST",
+    body: JSON.stringify({ messages }),
+  })
+}
+
 async function fetchProfile(userId: string, email: string): Promise<User> {
   const { data, error } = await supabase
     .from("profiles")

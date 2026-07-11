@@ -1,0 +1,149 @@
+"use client"
+
+import { useEffect, useRef, useState } from "react"
+import { GlassCard } from "@/components/effects/glass-card"
+import { Button } from "@/components/ui/button"
+import { SectionHeader, inputCls } from "@/components/admin/ui"
+import { askAdminAssistant } from "@/lib/api"
+import { cn } from "@/lib/utils"
+import { Bot, Send, Sparkles, User } from "lucide-react"
+
+type Msg = { role: "user" | "assistant"; content: string }
+
+const SUGGESTIONS = [
+  "Kategorileri listele",
+  "Fren kategorisine %15 zam yap (önce önizle)",
+  "Yeni kampanya: %10 indirim, 15 gün sürsün",
+  "Bakım modunu aç",
+  "Fiyat güncelleme bildirimini 20 Temmuz için aç",
+  "İş özeti ver",
+]
+
+export default function AdminAssistantPage() {
+  const [messages, setMessages] = useState<Msg[]>([
+    {
+      role: "assistant",
+      content:
+        "Merhaba! Ben ROCKSWELL admin asistanıyım. Örneğin “X kategorisine %15 zam yap” veya “15 günlük %10 kampanya oluştur” diyebilirsiniz. Fiyat ve kampanya işlemlerinde önce önizleme gösteririm, onayınızdan sonra uygularım.",
+    },
+  ])
+  const [input, setInput] = useState("")
+  const [busy, setBusy] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, busy])
+
+  const send = async (text: string) => {
+    const content = text.trim()
+    if (!content || busy) return
+    const nextMessages: Msg[] = [...messages, { role: "user", content }]
+    setMessages(nextMessages)
+    setInput("")
+    setBusy(true)
+    try {
+      const history = nextMessages.filter((m, i) => !(i === 0 && m.role === "assistant"))
+      const { reply } = await askAdminAssistant(history)
+      setMessages((prev) => [...prev, { role: "assistant", content: reply }])
+    } catch (e) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: e instanceof Error ? e.message : "Bir hata oluştu",
+        },
+      ])
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="h-[calc(100vh-3rem)] max-w-3xl flex flex-col gap-4">
+      <SectionHeader
+        icon={Bot}
+        tone="accent"
+        title="AI Asistan"
+        subtitle="Doğal dilde fiyat, kampanya ve sistem işlemleri"
+      />
+
+      <div className="flex flex-wrap gap-2">
+        {SUGGESTIONS.map((s) => (
+          <button
+            key={s}
+            type="button"
+            disabled={busy}
+            onClick={() => send(s)}
+            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/[0.03] text-white/55 hover:text-white hover:border-accent/30 hover:bg-accent/5 transition-colors disabled:opacity-40"
+          >
+            <Sparkles size={10} className="inline mr-1 opacity-60" />
+            {s}
+          </button>
+        ))}
+      </div>
+
+      <GlassCard intensity="light" className="flex-1 min-h-0 p-0 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {messages.map((m, i) => (
+            <div
+              key={`${i}-${m.role}`}
+              className={cn("flex gap-2.5", m.role === "user" ? "justify-end" : "justify-start")}
+            >
+              {m.role === "assistant" && (
+                <div className="w-7 h-7 rounded-lg bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0 mt-0.5">
+                  <Bot size={14} className="text-accent" />
+                </div>
+              )}
+              <div
+                className={cn(
+                  "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
+                  m.role === "user"
+                    ? "bg-accent text-black rounded-br-md"
+                    : "bg-white/[0.05] border border-white/10 text-white/85 rounded-bl-md"
+                )}
+              >
+                {m.content}
+              </div>
+              {m.role === "user" && (
+                <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                  <User size={14} className="text-white/60" />
+                </div>
+              )}
+            </div>
+          ))}
+          {busy && (
+            <div className="flex items-center gap-2 text-xs text-white/40 pl-9">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+              Düşünüyor…
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        <form
+          className="p-3 border-t border-white/10 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void send(input)
+          }}
+        >
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Örn: Fren kategorisine %15 zam yap"
+            disabled={busy}
+            className={cn(inputCls, "flex-1")}
+          />
+          <Button type="submit" disabled={busy || !input.trim()} icon={<Send size={14} />}>
+            Gönder
+          </Button>
+        </form>
+      </GlassCard>
+
+      <p className="text-[11px] text-white/30">
+        Fiyat ve kampanya işlemleri önce önizlenir; “onayla” demeden uygulanmaz. OPENAI_API_KEY gerekir.
+      </p>
+    </div>
+  )
+}

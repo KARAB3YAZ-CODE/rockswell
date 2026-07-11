@@ -272,15 +272,15 @@ export default function CustomerHomePage() {
         <div className="grid lg:grid-cols-3 gap-4">
           <GlassCard intensity="medium" className="p-5 lg:col-span-2">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center text-xl font-bold text-black shadow-lg shadow-accent/20">
+              <div className="w-14 h-14 shrink-0 rounded-2xl bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center text-xl font-bold text-black shadow-lg shadow-accent/20">
                 {user ? `${user.name[0]}${user.surname[0]}` : "R"}
               </div>
-              <div className="flex-1">
-                <h1 className="text-lg font-bold text-white">
+              <div className="flex-1 min-w-0 space-y-1">
+                <h1 className="text-lg font-bold text-white leading-tight m-0">
                   Hoş geldin, {user?.name ?? "..."}
                 </h1>
-                <p className="text-sm text-white/50">{company?.name ?? ""}</p>
-                <div className="flex items-center gap-3 mt-2">
+                <p className="text-sm text-white/50 leading-tight m-0">{company?.name ?? ""}</p>
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <div className="flex items-center gap-1.5 text-xs">
                     <span className={cn("w-1.5 h-1.5 rounded-full", user?.isActive ? "bg-success" : "bg-white/30")} />
                     <span className="text-white/40">{roleLabel(user?.role)}</span>
@@ -291,8 +291,12 @@ export default function CustomerHomePage() {
                   <Badge variant="info" size="sm">%{companyDiscountRate} iskonto</Badge>
                 </div>
               </div>
-              <Link href="/account">
-                <Button variant="ghost" size="sm" icon={<ChevronRight size={14} />}>Profil</Button>
+              <Link
+                href="/account"
+                className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-white/50 hover:text-white transition-colors"
+              >
+                Profil
+                <ChevronRight size={14} />
               </Link>
             </div>
           </GlassCard>

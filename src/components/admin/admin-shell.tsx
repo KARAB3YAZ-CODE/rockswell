@@ -9,11 +9,12 @@ import { cn } from "@/lib/utils"
 import {
   Activity, Users, Building2, Package, ShoppingBag,
   Warehouse, Percent, FileText, BarChart3, Settings,
-  LogOut, ExternalLink,
+  LogOut, ExternalLink, Bot,
 } from "lucide-react"
 
 const nav = [
   { href: "/", label: "Genel Bakış", icon: Activity },
+  { href: "/assistant", label: "AI Asistan", icon: Bot },
   { href: "/users", label: "Kullanıcılar", icon: Users },
   { href: "/companies", label: "Şirketler", icon: Building2 },
   { href: "/products", label: "Ürünler", icon: Package },
