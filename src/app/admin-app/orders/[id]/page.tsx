@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
-import { getOrderById, updateOrderStatus, getAllCompanies, requestOrderReturn, getAllInvoices } from "@/lib/api"
+import { getOrderById, updateOrderStatus, getAllCompanies, requestOrderReturn, getAllInvoices, updateOrderShipping } from "@/lib/api"
 import { adminPath } from "@/lib/admin-host"
 import { formatDate, formatPrice, cn } from "@/lib/utils"
 import { orderStatusLabels } from "@/components/admin/ui"
@@ -71,6 +71,14 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   const [showReturn, setShowReturn] = useState(false)
   const [returnReason, setReturnReason] = useState("")
   const [returnQty, setReturnQty] = useState<Record<string, number>>({})
+  const [carrier, setCarrier] = useState("")
+  const [trackingNumber, setTrackingNumber] = useState("")
+
+  useEffect(() => {
+    if (!order) return
+    setCarrier(order.shipping.carrier || "")
+    setTrackingNumber(order.shipping.trackingNumber || "")
+  }, [order?.id, order?.shipping.carrier, order?.shipping.trackingNumber])
 
   const companyName = companies?.find((c) => c.id === order?.companyId)?.name ?? "—"
   const next = order ? nextStatus(order.status) : null
@@ -352,6 +360,46 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                 </h2>
                 <Row label="Yöntem" value={String(order.payment.method ?? "—")} />
                 <Row label="Durum" value={String(order.payment.status ?? "—")} />
+              </GlassCard>
+              <GlassCard intensity="light" className="p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Truck size={14} className="text-accent" /> Kargo takip
+                </h2>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    value={carrier}
+                    onChange={(e) => setCarrier(e.target.value)}
+                    placeholder="Kargo firması (Yurtiçi, Aras…)"
+                    className="h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-xs placeholder:text-white/25 focus:outline-none focus:border-accent/40"
+                  />
+                  <input
+                    value={trackingNumber}
+                    onChange={(e) => setTrackingNumber(e.target.value)}
+                    placeholder="Takip numarası"
+                    className="h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-xs placeholder:text-white/25 focus:outline-none focus:border-accent/40 font-mono"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  disabled={busy || !trackingNumber.trim()}
+                  onClick={async () => {
+                    setBusy(true)
+                    try {
+                      await updateOrderShipping(id, { carrier, trackingNumber })
+                      toast.success("Kargo bilgisi kaydedildi")
+                      refetch()
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Kaydedilemedi")
+                    } finally {
+                      setBusy(false)
+                    }
+                  }}
+                >
+                  Kaydet{trackingNumber.trim() && order.status !== "shipped" && order.status !== "delivered" ? " ve kargola" : ""}
+                </Button>
+                <p className="text-[10px] text-white/30">
+                  Takip no kaydedilince bayiye bildirim gider; durum uygunsa sipariş “Kargoda” olur.
+                </p>
               </GlassCard>
               <GlassCard intensity="light" className="p-5 space-y-2">
                 <h2 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">

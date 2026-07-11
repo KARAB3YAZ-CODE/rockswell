@@ -12,7 +12,7 @@ import {
   LayoutDashboard, ShoppingBag, Package,
   FileText, Settings, HelpCircle, LogOut,
   ChevronLeft, MessageSquare, ClipboardList, Percent,
-  ChevronDown, Shield, ExternalLink, Building2, BarChart3,
+  ChevronDown, Shield, ExternalLink, Building2, BarChart3, Wallet,
 } from "lucide-react"
 
 interface NavItem {
@@ -46,6 +46,7 @@ const customerNav: NavItem[] = [
   },
   { label: "Sepet", icon: <ClipboardList size={20} />, href: "/cart" },
   { label: "Faturalar", icon: <FileText size={20} />, href: "/account/invoices" },
+  { label: "Cari / Kredi", icon: <Wallet size={20} />, href: "/account/credit" },
   { label: "Kampanyalar", icon: <Percent size={20} />, href: "/account/campaigns" },
   { label: "Raporlar", icon: <BarChart3 size={20} />, href: "/account/reports" },
   { label: "Destek", icon: <MessageSquare size={20} />, href: "/account/support" },
@@ -53,7 +54,7 @@ const customerNav: NavItem[] = [
 
 const bottomItems: NavItem[] = [
   { label: "Ayarlar", icon: <Settings size={20} />, href: "/account/settings" },
-  { label: "Yardım", icon: <HelpCircle size={20} />, href: "/account/support" },
+  { label: "Yardım", icon: <HelpCircle size={20} />, href: "/account/help" },
 ]
 
 export function Sidebar() {

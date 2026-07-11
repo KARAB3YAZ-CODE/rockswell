@@ -750,7 +750,20 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     }
   }
 
-  return mapOrder(data)
+  const mapped = mapOrder(data)
+  try {
+    await createNotification({
+      userId: user.id,
+      type: "success",
+      title: input.asQuotation ? "Teklif talebi oluşturuldu" : isOnline ? "Ödeme bekleniyor" : "Sipariş onaya gönderildi",
+      message: `${mapped.orderNumber} · ${mapped.pricing.grandTotal.toLocaleString("tr-TR")} ₺`,
+      link: isOnline ? `/payment/${mapped.id}` : `/orders/${mapped.id}`,
+    })
+  } catch {
+    /* best-effort */
+  }
+
+  return mapped
 }
 
 export async function updateOrderStatus(
@@ -850,7 +863,76 @@ export async function updateOrderStatus(
     }
   }
 
-  return mapOrder(data)
+  const mapped = mapOrder(data)
+  const label = status === "confirmed" ? "Siparişiniz onaylandı"
+    : status === "processing" ? "Siparişiniz hazırlanıyor"
+    : status === "shipped" ? "Siparişiniz kargoya verildi"
+    : status === "delivered" ? "Siparişiniz teslim edildi"
+    : status === "cancelled" ? "Siparişiniz iptal edildi"
+    : status === "returned" ? "İade kaydı oluşturuldu"
+    : `Sipariş durumu: ${status}`
+
+  try {
+    await notifyOrderUser(String(data.user_id ?? ""), {
+      type: status === "cancelled" ? "warning" : "success",
+      title: label,
+      message: `${mapped.orderNumber}`,
+      link: `/orders/${mapped.id}`,
+    })
+  } catch {
+    /* best-effort */
+  }
+
+  return mapped
+}
+
+export async function updateOrderShipping(
+  id: string,
+  input: { carrier: string; trackingNumber: string }
+): Promise<Order> {
+  await requireAdminUser()
+  const { data: existing, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", id)
+    .single()
+  if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
+
+  const prevShipping = (existing.shipping ?? {}) as Record<string, unknown>
+  const shipping = {
+    ...prevShipping,
+    carrier: input.carrier.trim(),
+    trackingNumber: input.trackingNumber.trim(),
+    status: input.trackingNumber.trim() ? "shipped" : (prevShipping.status ?? "pending"),
+  }
+
+  const patch: Record<string, unknown> = { shipping }
+  if (input.trackingNumber.trim() && ["confirmed", "processing", "approved"].includes(String(existing.status))) {
+    patch.status = "shipped"
+  }
+
+  const { data, error } = await supabase
+    .from("orders")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Kargo bilgisi güncellenemedi")
+
+  const mapped = mapOrder(data)
+  if (input.trackingNumber.trim()) {
+    try {
+      await notifyOrderUser(String(data.user_id ?? ""), {
+        type: "info",
+        title: "Kargo takip numarası",
+        message: `${mapped.orderNumber} · ${input.carrier || "Kargo"} ${input.trackingNumber}`,
+        link: `/orders/${mapped.id}`,
+      })
+    } catch {
+      /* best-effort */
+    }
+  }
+  return mapped
 }
 
 /** Dealer/admin partial or full return for a delivered order. */
@@ -1023,6 +1105,98 @@ export async function getMyCreditSnapshot() {
   return getCompanyCreditSnapshot(user.companyId)
 }
 
+export interface CreditLedgerEntry {
+  id: string
+  kind: "invoice_open" | "invoice_paid" | "order_pending"
+  label: string
+  amount: number
+  date: string
+  link?: string
+  status: string
+}
+
+/** Simple open-account ledger: open invoices + pending havale + recent paid. */
+export async function getMyCreditLedger(): Promise<{
+  snapshot: Awaited<ReturnType<typeof getCompanyCreditSnapshot>>
+  entries: CreditLedgerEntry[]
+}> {
+  const user = await getCurrentUser()
+  if (!user.companyId) {
+    return {
+      snapshot: {
+        creditLimit: 0,
+        creditUsed: 0,
+        creditRemaining: 0,
+        openInvoicesAmount: 0,
+        pendingOrdersAmount: 0,
+      },
+      entries: [],
+    }
+  }
+
+  const snapshot = await getCompanyCreditSnapshot(user.companyId)
+  const [{ data: invoices }, { data: pending }] = await Promise.all([
+    supabase
+      .from("invoices")
+      .select("id, invoice_number, grand_total, status, created_at, paid_date, order_id")
+      .eq("company_id", user.companyId)
+      .order("created_at", { ascending: false })
+      .limit(40),
+    supabase
+      .from("orders")
+      .select("id, order_number, pricing, payment, status, created_at")
+      .eq("company_id", user.companyId)
+      .in("status", ["pending_approval", "approved"])
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ])
+
+  const entries: CreditLedgerEntry[] = []
+
+  for (const inv of invoices ?? []) {
+    const status = String(inv.status)
+    const amount = Number(inv.grand_total ?? 0)
+    if (["sent", "overdue"].includes(status)) {
+      entries.push({
+        id: `inv-${inv.id}`,
+        kind: "invoice_open",
+        label: String(inv.invoice_number),
+        amount,
+        date: String(inv.created_at),
+        link: `/account/invoices/${inv.id}`,
+        status,
+      })
+    } else if (status === "paid") {
+      entries.push({
+        id: `inv-paid-${inv.id}`,
+        kind: "invoice_paid",
+        label: `${inv.invoice_number} (ödendi)`,
+        amount: -amount,
+        date: String(inv.paid_date ?? inv.created_at),
+        link: `/account/invoices/${inv.id}`,
+        status,
+      })
+    }
+  }
+
+  for (const row of pending ?? []) {
+    const payment = (row.payment ?? {}) as { method?: string; status?: string }
+    if (payment.method === "online" || payment.status === "paid") continue
+    entries.push({
+      id: `ord-${row.id}`,
+      kind: "order_pending",
+      label: `${row.order_number} (onay bekliyor)`,
+      amount: Number((row.pricing as { grandTotal?: number } | null)?.grandTotal ?? 0),
+      date: String(row.created_at),
+      link: `/orders/${row.id}`,
+      status: String(row.status),
+    })
+  }
+
+  entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  return { snapshot, entries: entries.slice(0, 50) }
+}
+
 // ─── Campaigns ──────────────────────────────────────────────────────────────
 
 export async function getCampaigns(): Promise<Campaign[]> {
@@ -1121,6 +1295,35 @@ export async function markAllNotificationsRead(): Promise<void> {
     .eq("user_id", user.id)
     .eq("is_read", false)
   if (error) err(error.message)
+}
+
+export async function createNotification(input: {
+  userId: string
+  type?: Notification["type"]
+  title: string
+  message: string
+  link?: string
+}): Promise<void> {
+  const { error } = await supabase.from("notifications").insert({
+    user_id: input.userId,
+    type: input.type ?? "info",
+    title: input.title,
+    message: input.message,
+    link: input.link ?? null,
+    is_read: false,
+  })
+  if (error) {
+    /* non-fatal for callers */
+    console.warn("notification insert failed", error.message)
+  }
+}
+
+async function notifyOrderUser(
+  orderUserId: string | null | undefined,
+  input: { type?: Notification["type"]; title: string; message: string; link?: string }
+) {
+  if (!orderUserId) return
+  await createNotification({ userId: orderUserId, ...input })
 }
 
 // ─── Admin ──────────────────────────────────────────────────────────────────
@@ -1616,6 +1819,24 @@ export async function getInvoices(): Promise<Invoice[]> {
   const { data, error } = await query
   if (error) err(error.message)
   return (data ?? []).map(mapInvoice).map(withOverdueStatus)
+}
+
+export async function getInvoiceById(id: string): Promise<Invoice & { companyName?: string }> {
+  const user = await getCurrentUser()
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("*, companies(name)")
+    .eq("id", id)
+    .single()
+  if (error || !data) err(error?.message ?? "Fatura bulunamadı")
+  const inv = withOverdueStatus({
+    ...mapInvoice(data),
+    companyName: (data.companies as { name?: string } | null)?.name ?? undefined,
+  })
+  if (user.role !== "admin" && user.companyId && inv.companyId !== user.companyId) {
+    err("Bu faturaya erişim yok")
+  }
+  return inv
 }
 
 /** Admin: all invoices across companies. */

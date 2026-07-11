@@ -94,6 +94,7 @@ export default function AccountOverviewPage() {
               {[
                 { icon: Package, label: "Yeni Sipariş", href: "/products" },
                 { icon: FileText, label: "Faturalar", href: "/account/invoices" },
+                { icon: CreditCard, label: "Cari / Kredi", href: "/account/credit" },
                 { icon: Key, label: "Ayarlar", href: "/account/settings" },
               ].map((item) => {
                 const Icon = item.icon

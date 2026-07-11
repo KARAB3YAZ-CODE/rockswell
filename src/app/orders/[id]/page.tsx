@@ -13,9 +13,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
 import { getOrderById, requestOrderReturn } from "@/lib/api"
 import { formatDate, formatPrice, cn } from "@/lib/utils"
+import { trackingUrl } from "@/lib/shipping"
 import {
   Package, Truck, CheckCircle, Clock, XCircle, FileText,
-  ArrowLeft, CreditCard, MapPin, StickyNote, RotateCcw, Minus, Plus,
+  ArrowLeft, CreditCard, MapPin, StickyNote, RotateCcw, Minus, Plus, ExternalLink,
 } from "lucide-react"
 
 const statusConfig: Record<string, { label: string; color: "default" | "warning" | "info" | "success" | "danger"; icon: typeof Clock }> = {
@@ -309,8 +310,29 @@ export default function OrderDetailPage() {
                   <h2 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
                     <MapPin size={14} className="text-accent" /> Teslimat
                   </h2>
+                  {order.shipping.carrier && (
+                    <Row label="Kargo firması" value={order.shipping.carrier} />
+                  )}
                   {order.shipping.trackingNumber && (
-                    <Row label="Kargo Takip" value={order.shipping.trackingNumber} />
+                    <div className="flex justify-between text-sm items-center gap-2">
+                      <span className="text-white/40">Kargo takip</span>
+                      {(() => {
+                        const url = trackingUrl(order.shipping.carrier || "", order.shipping.trackingNumber || "")
+                        return url ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-info hover:underline inline-flex items-center gap-1 font-mono text-xs"
+                          >
+                            {order.shipping.trackingNumber}
+                            <ExternalLink size={11} />
+                          </a>
+                        ) : (
+                          <span className="text-white font-mono text-xs">{order.shipping.trackingNumber}</span>
+                        )
+                      })()}
+                    </div>
                   )}
                   <p className="text-xs text-white/50 leading-relaxed">
                     {[order.shipping.address?.street, order.shipping.address?.district, order.shipping.address?.city]

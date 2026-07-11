@@ -160,10 +160,12 @@ export default function PaymentPage() {
                   <ShieldCheck size={28} className="text-warning" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-white">PayTR test modu</p>
+                  <p className="text-sm font-medium text-white">
+                    {process.env.NODE_ENV === "production" ? "Online ödeme yapılandırılmamış" : "PayTR test modu"}
+                  </p>
                   <p className="text-xs text-white/40 mt-1 max-w-md mx-auto">
-                    PayTR canlı bilgileri (merchant_id / key / salt) eklendiğinde gerçek kart ödeme
-                    ekranı burada açılır. Şimdilik akışı test etmek için ödemeyi onaylayabilirsiniz.
+                    Canlıda `PAYTR_MERCHANT_ID`, `PAYTR_MERCHANT_KEY`, `PAYTR_MERCHANT_SALT` tanımlı olmalıdır.
+                    Test onayı yalnızca geliştirme ortamında veya `PAYTR_ALLOW_TEST_MODE=1` iken açıktır.
                   </p>
                 </div>
                 <Button

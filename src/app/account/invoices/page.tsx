@@ -55,7 +55,7 @@ export default function InvoicesPage() {
                   className="flex items-center justify-between gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/5"
                 >
                   <Link
-                    href={inv.orderId ? `/orders/${inv.orderId}` : "/orders"}
+                    href={`/account/invoices/${inv.id}`}
                     className="flex items-center gap-3 min-w-0 flex-1 hover:opacity-90"
                   >
                     <div className="w-9 h-9 rounded-xl bg-info/10 text-info flex items-center justify-center shrink-0">
@@ -73,14 +73,13 @@ export default function InvoicesPage() {
                     <p className="text-sm font-bold text-white">{formatPrice(inv.grandTotal)}</p>
                     <div className="flex items-center justify-end gap-2">
                       <Badge variant={status.color} size="sm">{status.label}</Badge>
-                      <button
-                        type="button"
-                        title="Yazdır"
-                        onClick={() => window.print()}
+                      <Link
+                        href={`/account/invoices/${inv.id}`}
+                        title="PDF / Yazdır"
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-white/30 hover:text-white hover:bg-white/5"
                       >
                         <Printer size={13} />
-                      </button>
+                      </Link>
                     </div>
                   </div>
                 </div>
