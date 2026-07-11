@@ -298,32 +298,33 @@ export default function CustomerHomePage() {
           </div>
         </div>
 
-        {/* Welcome + Quick Stats */}
-        <div className="grid lg:grid-cols-3 gap-4 items-start">
-          <GlassCard intensity="medium" className="p-5 lg:col-span-2 !py-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 shrink-0 rounded-2xl bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center text-lg font-bold text-black shadow-lg shadow-accent/20">
+        {/* Welcome + discount + credit */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-stretch">
+          <GlassCard intensity="medium" className="p-5 md:col-span-2 relative overflow-hidden">
+            <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-accent/5 blur-2xl pointer-events-none" />
+            <div className="relative flex items-start gap-4">
+              <div className="w-14 h-14 shrink-0 rounded-2xl bg-gradient-to-br from-accent to-accent/70 flex items-center justify-center text-xl font-bold text-black shadow-lg shadow-accent/25">
                 {user ? `${user.name[0]}${user.surname[0]}` : "R"}
               </div>
-              <div className="flex-1 min-w-0 space-y-1">
-                <h1 className="text-lg font-bold text-white leading-tight m-0">
-                  Hoş geldin, {user?.name ?? "..."}
+              <div className="flex-1 min-w-0 pt-0.5">
+                <p className="text-[11px] uppercase tracking-wider text-white/35 mb-1">Firma paneli</p>
+                <h1 className="text-xl font-bold text-white leading-snug m-0">
+                  Hoş geldin, {user?.name ?? "…"}
                 </h1>
-                <p className="text-sm text-white/50 leading-tight m-0">{company?.name ?? ""}</p>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <div className="flex items-center gap-1.5 text-xs">
+                <p className="text-sm text-white/55 mt-1 truncate">{company?.name ?? "—"}</p>
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-white/45">
                     <span className={cn("w-1.5 h-1.5 rounded-full", user?.isActive ? "bg-success" : "bg-white/30")} />
-                    <span className="text-white/40">{roleLabel(user?.role)}</span>
-                  </div>
+                    {roleLabel(user?.role)}
+                  </span>
                   <Badge variant={user?.isActive ? "success" : "default"} size="sm">
                     {user?.isActive ? "Aktif" : "Pasif"}
                   </Badge>
-                  <Badge variant="info" size="sm">%{companyDiscountRate} iskonto</Badge>
                 </div>
               </div>
               <Link
                 href="/account"
-                className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-white/50 hover:text-white transition-colors"
+                className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-xl border border-white/10 text-xs font-medium text-white/55 hover:text-white hover:border-accent/30 hover:bg-white/[0.03] transition-colors"
               >
                 Profil
                 <ChevronRight size={14} />
@@ -331,24 +332,45 @@ export default function CustomerHomePage() {
             </div>
           </GlassCard>
 
+          <GlassCard intensity="light" className="p-5 relative overflow-hidden border-accent/20">
+            <Glow color="rgba(57, 255, 20," size={120} opacity={0.1} blur={50} className="top-0 right-0" />
+            <div className="relative h-full flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[11px] font-medium text-white/40 uppercase tracking-wider">İskonto oranınız</span>
+                <Percent size={15} className="text-accent/60" />
+              </div>
+              <p className="text-3xl font-bold text-accent tracking-tight leading-none">
+                %{companyDiscountRate}
+              </p>
+              <p className="text-xs text-white/40 mt-auto pt-3">
+                Liste fiyatına uygulanan bayi iskontosu
+              </p>
+            </div>
+          </GlassCard>
+
           <GlassCard intensity="light" glow className="p-5 relative overflow-hidden">
-            <Glow color="rgba(57, 255, 20," size={150} opacity={0.08} blur={60} className="top-0 right-0" />
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-white/40 uppercase tracking-wider">Kredi Limiti</span>
-              <CreditCard size={16} className="text-white/20" />
-            </div>
-            <p className="text-2xl font-bold text-white">{formatPrice(creditLimit)}</p>
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-white/40">Kullanılan: {formatPrice(creditUsed)}</span>
-              <span className="text-xs text-accent font-medium">%{Math.round(creditPercent)}</span>
-            </div>
-            <div className="relative h-1.5 bg-white/5 rounded-full mt-2 overflow-hidden">
-              <motion.div
-                className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-accent to-accent/60"
-                initial={{ width: 0 }}
-                animate={{ width: `${Math.min(100, creditPercent)}%` }}
-                transition={{ duration: 1, delay: 0.3 }}
-              />
+            <Glow color="rgba(57, 255, 20," size={120} opacity={0.06} blur={50} className="top-0 right-0" />
+            <div className="relative h-full flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[11px] font-medium text-white/40 uppercase tracking-wider">Kredi limiti</span>
+                <CreditCard size={15} className="text-white/25" />
+              </div>
+              <p className="text-2xl font-bold text-white leading-none">{formatPrice(creditLimit)}</p>
+              <div className="flex items-center justify-between mt-2.5">
+                <span className="text-xs text-white/40">Kullanılan {formatPrice(creditUsed)}</span>
+                <span className="text-xs text-accent font-medium">%{Math.round(creditPercent)}</span>
+              </div>
+              <div className="relative h-1.5 bg-white/5 rounded-full mt-2 overflow-hidden">
+                <motion.div
+                  className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-accent to-accent/60"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, creditPercent)}%` }}
+                  transition={{ duration: 1, delay: 0.3 }}
+                />
+              </div>
+              <p className="text-[11px] text-white/30 mt-auto pt-2">
+                Kalan {formatPrice(Math.max(0, creditLimit - creditUsed))}
+              </p>
             </div>
           </GlassCard>
         </div>
