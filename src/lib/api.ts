@@ -1304,17 +1304,19 @@ export async function createNotification(input: {
   message: string
   link?: string
 }): Promise<void> {
-  const { error } = await supabase.from("notifications").insert({
-    user_id: input.userId,
-    type: input.type ?? "info",
-    title: input.title,
-    message: input.message,
-    link: input.link ?? null,
-    is_read: false,
-  })
-  if (error) {
-    /* non-fatal for callers */
-    console.warn("notification insert failed", error.message)
+  try {
+    await authedFetch("/api/notifications", {
+      method: "POST",
+      body: JSON.stringify({
+        userId: input.userId,
+        type: input.type ?? "info",
+        title: input.title,
+        message: input.message,
+        link: input.link ?? null,
+      }),
+    })
+  } catch (e) {
+    console.warn("notification insert failed", e instanceof Error ? e.message : e)
   }
 }
 
