@@ -11,7 +11,8 @@ import { getAllInvoices, updateInvoiceStatus } from "@/lib/api"
 import { adminPath } from "@/lib/admin-host"
 import { formatPrice, formatDate, cn } from "@/lib/utils"
 import { SectionHeader, inputCls } from "@/components/admin/ui"
-import { FileText, Search, ShoppingBag, CheckCircle2 } from "lucide-react"
+import { FileText, Search, ShoppingBag, CheckCircle2, Download } from "lucide-react"
+import { downloadTextFile, invoicesToAccountingCsv } from "@/lib/accounting-export"
 
 const statusLabels: Record<string, string> = {
   draft: "Taslak",
@@ -87,6 +88,26 @@ export default function AdminInvoicesPage() {
         tone="info"
         title="Faturalar"
         subtitle={`${filtered.length} / ${invoices?.length ?? 0} fatura`}
+        action={
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Download size={14} />}
+            onClick={() => {
+              if (!filtered.length) {
+                toast.error("Dışa aktarılacak fatura yok")
+                return
+              }
+              downloadTextFile(
+                `rockswell-faturalar-${new Date().toISOString().slice(0, 10)}.csv`,
+                invoicesToAccountingCsv(filtered)
+              )
+              toast.success("Muhasebe CSV indirildi")
+            }}
+          >
+            Muhasebe CSV
+          </Button>
+        }
       />
 
       <div className="rounded-2xl border border-border bg-card/60 p-3 space-y-3">

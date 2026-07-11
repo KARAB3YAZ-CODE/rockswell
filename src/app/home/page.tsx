@@ -15,7 +15,7 @@ import { useCampaigns, useProducts, useOrders, useData, useDiscountRate } from "
 import { getDashboardStats, getHomeBanners } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { roleLabel } from "@/lib/roles"
-import { useCartStore } from "@/lib/store"
+import { useCartStore, useRecentlyViewedStore } from "@/lib/store"
 import { cartItemFromProduct, productInStock } from "@/lib/cart-item"
 import { dealerPriceDisplay } from "@/lib/pricing"
 import { formatPrice, formatDate, cn } from "@/lib/utils"
@@ -26,7 +26,7 @@ import {
   Search, Zap, Grid3X3,
   CreditCard,
   Plus, CircleCheck, CircleDashed,
-  Timer, MessageSquare,
+  Timer, MessageSquare, Clock,
   Minus, ShoppingCart, X,
 } from "lucide-react"
 
@@ -98,6 +98,12 @@ export default function CustomerHomePage() {
   const featuredProducts = useMemo(() => {
     return products.filter((p) => p.isFeatured).slice(0, 4)
   }, [products])
+
+  const recentIds = useRecentlyViewedStore((s) => s.items)
+  const recentlyViewed = useMemo(() => {
+    const map = new Map(products.map((p) => [p.id, p]))
+    return recentIds.map((id) => map.get(id)).filter(Boolean).slice(0, 4) as typeof products
+  }, [products, recentIds])
 
   const activeCampaigns = useMemo(() => {
     return campaigns.filter((c) => c.isActive).slice(0, 3)
@@ -797,6 +803,33 @@ export default function CustomerHomePage() {
         )}
 
         {/* Featured Products */}
+        {recentlyViewed.length > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-info/10 text-info flex items-center justify-center">
+                  <Clock size={12} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Son İncelenenler</h2>
+                  <p className="text-sm text-white/40">Kaldığınız yerden devam edin</p>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {recentlyViewed.map((product) => (
+                <Link key={product.id} href={`/products/${product.id}`}>
+                  <GlassCard intensity="light" className="p-4 h-full hover:bg-white/[0.06] transition-all">
+                    <p className="text-sm font-medium text-white line-clamp-2">{product.name}</p>
+                    <p className="text-[10px] text-white/30 font-mono mt-1">{product.sku}</p>
+                    <p className="text-sm font-bold text-accent mt-2">{formatPrice(product.basePrice)}</p>
+                  </GlassCard>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
         {featuredProducts.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-4">

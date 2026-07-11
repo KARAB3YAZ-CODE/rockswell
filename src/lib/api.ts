@@ -317,6 +317,60 @@ export async function getMySupportTickets(): Promise<SupportTicket[]> {
   }))
 }
 
+export interface AdminSupportTicket extends SupportTicket {
+  userId: string
+  companyId?: string
+  companyName?: string
+  userEmail?: string
+}
+
+export async function getAllSupportTickets(): Promise<AdminSupportTicket[]> {
+  await requireAdminUser()
+  const { data, error } = await supabase
+    .from("support_tickets")
+    .select("id, subject, category, message, status, created_at, user_id, company_id")
+    .order("created_at", { ascending: false })
+    .limit(200)
+  if (error) err(error.message)
+
+  const companyIds = [...new Set((data ?? []).map((r) => r.company_id).filter(Boolean))] as string[]
+  const userIds = [...new Set((data ?? []).map((r) => r.user_id).filter(Boolean))] as string[]
+
+  const [{ data: companies }, { data: profiles }] = await Promise.all([
+    companyIds.length
+      ? supabase.from("companies").select("id, name").in("id", companyIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    userIds.length
+      ? supabase.from("profiles").select("id, email").in("id", userIds)
+      : Promise.resolve({ data: [] as { id: string; email: string }[] }),
+  ])
+
+  const companyMap = new Map((companies ?? []).map((c) => [String(c.id), String(c.name)]))
+  const emailMap = new Map((profiles ?? []).map((p) => [String(p.id), String(p.email)]))
+
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    subject: String(row.subject),
+    category: String(row.category ?? "genel"),
+    message: String(row.message),
+    status: String(row.status ?? "open"),
+    createdAt: String(row.created_at),
+    userId: String(row.user_id),
+    companyId: row.company_id ? String(row.company_id) : undefined,
+    companyName: row.company_id ? companyMap.get(String(row.company_id)) : undefined,
+    userEmail: emailMap.get(String(row.user_id)),
+  }))
+}
+
+export async function updateSupportTicketStatus(
+  id: string,
+  status: "open" | "in_progress" | "closed"
+): Promise<void> {
+  await requireAdminUser()
+  const { error } = await supabase.from("support_tickets").update({ status }).eq("id", id)
+  if (error) err(error.message)
+}
+
 // ─── Products ───────────────────────────────────────────────────────────────
 
 /**
@@ -878,6 +932,7 @@ export async function updateOrderStatus(
       title: label,
       message: `${mapped.orderNumber}`,
       link: `/orders/${mapped.id}`,
+      orderId: mapped.id,
     })
   } catch {
     /* best-effort */
@@ -927,6 +982,7 @@ export async function updateOrderShipping(
         title: "Kargo takip numarası",
         message: `${mapped.orderNumber} · ${input.carrier || "Kargo"} ${input.trackingNumber}`,
         link: `/orders/${mapped.id}`,
+        orderId: mapped.id,
       })
     } catch {
       /* best-effort */
@@ -1303,6 +1359,8 @@ export async function createNotification(input: {
   title: string
   message: string
   link?: string
+  /** When set, also try to email the order owner */
+  orderId?: string
 }): Promise<void> {
   try {
     await authedFetch("/api/notifications", {
@@ -1318,11 +1376,33 @@ export async function createNotification(input: {
   } catch (e) {
     console.warn("notification insert failed", e instanceof Error ? e.message : e)
   }
+
+  if (input.orderId) {
+    try {
+      await authedFetch("/api/email/order", {
+        method: "POST",
+        body: JSON.stringify({
+          orderId: input.orderId,
+          title: input.title,
+          message: input.message,
+          link: input.link,
+        }),
+      })
+    } catch {
+      /* email optional */
+    }
+  }
 }
 
 async function notifyOrderUser(
   orderUserId: string | null | undefined,
-  input: { type?: Notification["type"]; title: string; message: string; link?: string }
+  input: {
+    type?: Notification["type"]
+    title: string
+    message: string
+    link?: string
+    orderId?: string
+  }
 ) {
   if (!orderUserId) return
   await createNotification({ userId: orderUserId, ...input })

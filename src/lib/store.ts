@@ -143,19 +143,33 @@ interface SearchStore {
   addToHistory: (query: string) => void
 }
 
-export const useSearchStore = create<SearchStore>((set) => ({
-  recentSearches: [],
-  addRecentSearch: (query) =>
-    set((state) => ({
-      recentSearches: [query, ...state.recentSearches.filter((s) => s !== query)].slice(0, 10),
-    })),
-  clearRecentSearches: () => set({ recentSearches: [] }),
-  searchHistory: [],
-  addToHistory: (query) =>
-    set((state) => ({
-      searchHistory: [query, ...state.searchHistory.filter((s) => s !== query)].slice(0, 20),
-    })),
-}))
+export const useSearchStore = create<SearchStore>()(
+  persist(
+    (set) => ({
+      recentSearches: [],
+      addRecentSearch: (query) =>
+        set((state) => {
+          const q = query.trim()
+          if (!q) return state
+          return {
+            recentSearches: [q, ...state.recentSearches.filter((s) => s !== q)].slice(0, 10),
+            searchHistory: [q, ...state.searchHistory.filter((s) => s !== q)].slice(0, 20),
+          }
+        }),
+      clearRecentSearches: () => set({ recentSearches: [], searchHistory: [] }),
+      searchHistory: [],
+      addToHistory: (query) =>
+        set((state) => {
+          const q = query.trim()
+          if (!q) return state
+          return {
+            searchHistory: [q, ...state.searchHistory.filter((s) => s !== q)].slice(0, 20),
+          }
+        }),
+    }),
+    { name: "rockswell-search" }
+  )
+)
 
 interface FilterStore {
   filters: Record<string, string[]>
@@ -208,10 +222,15 @@ interface RecentlyViewedStore {
   addItem: (productId: string) => void
 }
 
-export const useRecentlyViewedStore = create<RecentlyViewedStore>((set) => ({
-  items: [],
-  addItem: (productId) =>
-    set((state) => ({
-      items: [productId, ...state.items.filter((i) => i !== productId)].slice(0, 12),
-    })),
-}))
+export const useRecentlyViewedStore = create<RecentlyViewedStore>()(
+  persist(
+    (set) => ({
+      items: [],
+      addItem: (productId) =>
+        set((state) => ({
+          items: [productId, ...state.items.filter((i) => i !== productId)].slice(0, 12),
+        })),
+    }),
+    { name: "rockswell-recently-viewed" }
+  )
+)

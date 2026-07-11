@@ -8,7 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
 import { getMyCreditLedger } from "@/lib/api"
 import { formatDate, formatPrice } from "@/lib/utils"
-import { CreditCard, ArrowUpRight, ArrowDownLeft } from "lucide-react"
+import { creditLedgerToCsv, downloadTextFile } from "@/lib/accounting-export"
+import { Button } from "@/components/ui/button"
+import { CreditCard, ArrowUpRight, ArrowDownLeft, Download } from "lucide-react"
+import toast from "react-hot-toast"
 
 export default function CreditLedgerPage() {
   const { data, loading } = useData(() => getMyCreditLedger(), [])
@@ -19,9 +22,27 @@ export default function CreditLedgerPage() {
   return (
     <Shell>
       <div className="max-w-3xl space-y-4">
-        <div>
-          <h2 className="text-xl font-bold text-white">Cari / Kredi</h2>
-          <p className="text-sm text-white/40">Açık hesap kullanımı ve fatura hareketleri</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-white">Cari / Kredi</h2>
+            <p className="text-sm text-white/40">Açık hesap kullanımı ve fatura hareketleri</p>
+          </div>
+          {entries.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Download size={14} />}
+              onClick={() => {
+                downloadTextFile(
+                  `rockswell-cari-${new Date().toISOString().slice(0, 10)}.csv`,
+                  creditLedgerToCsv(entries)
+                )
+                toast.success("Cari CSV indirildi")
+              }}
+            >
+              CSV
+            </Button>
+          )}
         </div>
 
         {loading || !snap ? (

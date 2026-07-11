@@ -314,24 +314,30 @@ export default function OrderDetailPage() {
                     <Row label="Kargo firması" value={order.shipping.carrier} />
                   )}
                   {order.shipping.trackingNumber && (
-                    <div className="flex justify-between text-sm items-center gap-2">
-                      <span className="text-white/40">Kargo takip</span>
-                      {(() => {
-                        const url = trackingUrl(order.shipping.carrier || "", order.shipping.trackingNumber || "")
-                        return url ? (
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-info hover:underline inline-flex items-center gap-1 font-mono text-xs"
-                          >
-                            {order.shipping.trackingNumber}
-                            <ExternalLink size={11} />
-                          </a>
-                        ) : (
-                          <span className="text-white font-mono text-xs">{order.shipping.trackingNumber}</span>
-                        )
-                      })()}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm items-center gap-2">
+                        <span className="text-white/40">Kargo takip</span>
+                        {(() => {
+                          const url = trackingUrl(order.shipping.carrier || "", order.shipping.trackingNumber || "")
+                          return url ? (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-info hover:underline inline-flex items-center gap-1 font-mono text-xs"
+                            >
+                              {order.shipping.trackingNumber}
+                              <ExternalLink size={11} />
+                            </a>
+                          ) : (
+                            <span className="text-white font-mono text-xs">{order.shipping.trackingNumber}</span>
+                          )
+                        })()}
+                      </div>
+                      <TrackStatusButton
+                        carrier={order.shipping.carrier || ""}
+                        trackingNumber={order.shipping.trackingNumber}
+                      />
                     </div>
                   )}
                   <p className="text-xs text-white/50 leading-relaxed">
@@ -363,6 +369,43 @@ function Row({ label, value, valueClass }: { label: string; value: string; value
     <div className="flex justify-between text-sm">
       <span className="text-white/40">{label}</span>
       <span className={valueClass ?? "text-white"}>{value}</span>
+    </div>
+  )
+}
+
+function TrackStatusButton({ carrier, trackingNumber }: { carrier: string; trackingNumber: string }) {
+  const [detail, setDetail] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const qs = new URLSearchParams({ carrier, trackingNumber })
+      const res = await fetch(`/api/shipping/track?${qs}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? "Sorgulanamadı")
+      setDetail(data.detail || data.status)
+      if (data.trackingUrl) {
+        /* keep link above */
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Takip sorgusu başarısız")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={load}
+        disabled={loading}
+        className="text-[11px] text-accent hover:underline disabled:opacity-50"
+      >
+        {loading ? "Sorgulanıyor…" : "Kargo durumu sorgula"}
+      </button>
+      {detail && <p className="text-[11px] text-white/45 leading-relaxed">{detail}</p>}
     </div>
   )
 }

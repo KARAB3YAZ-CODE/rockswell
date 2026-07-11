@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, use } from "react"
+import { useState, use, useEffect } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import toast from "react-hot-toast"
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useProduct, useProducts, useDiscountRate } from "@/hooks/use-data"
-import { useCartStore, useCompareStore } from "@/lib/store"
+import { useCartStore, useCompareStore, useRecentlyViewedStore } from "@/lib/store"
 import { cartItemFromProduct, productInStock } from "@/lib/cart-item"
 import { dealerPriceDisplay, TAX_RATE } from "@/lib/pricing"
 import { formatPrice } from "@/lib/utils"
@@ -32,10 +32,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const compareItems = useCompareStore((s) => s.items)
   const addCompare = useCompareStore((s) => s.addItem)
   const removeCompare = useCompareStore((s) => s.removeItem)
+  const addRecentlyViewed = useRecentlyViewedStore((s) => s.addItem)
   const [quantity, setQuantity] = useState(1)
   const [selectedImage, setSelectedImage] = useState(0)
   const [activeTab, setActiveTab] = useState<"info" | "specs" | "vehicles" | "docs">("info")
   const [orderNote, setOrderNote] = useState("")
+
+  useEffect(() => {
+    if (product?.id) addRecentlyViewed(product.id)
+  }, [product?.id, addRecentlyViewed])
 
   if (loading) {
     return (

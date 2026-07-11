@@ -9,7 +9,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
 import { getInvoiceById } from "@/lib/api"
 import { formatDate, formatPrice } from "@/lib/utils"
-import { ArrowLeft, Printer, FileText } from "lucide-react"
+import { downloadInvoicePdf } from "@/lib/invoice-pdf"
+import { ArrowLeft, Printer, FileText, Download } from "lucide-react"
 
 const statusLabel: Record<string, string> = {
   draft: "Taslak",
@@ -63,8 +64,16 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 <Button size="sm" variant="secondary">Sipariş</Button>
               </Link>
             )}
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Download size={14} />}
+              onClick={() => downloadInvoicePdf(inv)}
+            >
+              PDF İndir
+            </Button>
             <Button size="sm" icon={<Printer size={14} />} onClick={() => window.print()}>
-              PDF / Yazdır
+              Yazdır
             </Button>
           </div>
         </div>
