@@ -15,9 +15,12 @@ const SUGGESTIONS = [
   "Kategorileri listele",
   "Fren kategorisine %15 zam yap",
   "Yeni kampanya: %10 indirim, 15 gün",
-  "Bakım modunu aç",
-  "Fiyat güncelleme bildirimini 20.07.2026 için aç",
+  "Onay bekleyen siparişler",
+  "Firmaları listele",
+  "Düşük stok",
   "İş özeti ver",
+  "Sistem durumu",
+  "Komutlar",
 ]
 
 export default function AdminAssistantPage() {
@@ -25,7 +28,7 @@ export default function AdminAssistantPage() {
     {
       role: "assistant",
       content:
-        "Merhaba! Ücretsiz yerel asistanım — API ücreti yok. “Fren kategorisine %15 zam yap” veya “15 günlük %10 kampanya oluştur” yazabilirsiniz. Fiyat/kampanyada önce önizleme gelir; “onayla” ile uygulanır.",
+        "Merhaba! Ücretsiz asistan — kategori/marka bulanık eşleştirme, firma iskontosu, sipariş onayı, düşük stok ve daha fazlası. Belirsiz isimlerde seçenek sunarım; kritik işlemlerde önce önizleme → “onayla”.",
     },
   ])
   const [input, setInput] = useState("")
@@ -68,7 +71,7 @@ export default function AdminAssistantPage() {
         icon={Bot}
         tone="accent"
         title="AI Asistan"
-        subtitle="Ücretsiz yerel komut asistanı — fiyat, kampanya, bakım"
+        subtitle="Ücretsiz — akıllı komut motoru (bulanık eşleştirme + onay akışı)"
       />
 
       <div className="flex flex-wrap gap-2">
