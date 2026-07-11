@@ -17,7 +17,7 @@ import {
   HAVALE_EXTRA_DISCOUNT_RATE,
   TAX_RATE,
 } from "@/lib/pricing"
-import { createOrder, getCampaigns, getCustomerDiscountRate, type PaymentMethod } from "@/lib/api"
+import { createOrder, getCampaigns, getCustomerDiscountRate, getMyCreditSnapshot, type PaymentMethod } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useData } from "@/hooks/use-data"
 import {
@@ -39,6 +39,10 @@ export default function CartPage() {
   )
   const { data: campaigns } = useData(
     () => (isAuthenticated ? getCampaigns().catch(() => []) : Promise.resolve([])),
+    [isAuthenticated]
+  )
+  const { data: credit } = useData(
+    () => (isAuthenticated ? getMyCreditSnapshot() : Promise.resolve(null)),
     [isAuthenticated]
   )
 
@@ -63,6 +67,11 @@ export default function CartPage() {
     paymentDiscountRate,
   } = computeCartPricingFromLines(pricingLines, discountRate, paymentMethod, campaigns ?? [])
 
+  const havaleCreditBlocked =
+    paymentMethod === "havale" &&
+    !!credit &&
+    (credit.creditLimit <= 0 || credit.creditUsed + total > credit.creditLimit + 0.009)
+
   const checkoutItems = () =>
     items.map((i) => ({
       productId: i.productId,
@@ -81,6 +90,10 @@ export default function CartPage() {
       return
     }
     if (items.length === 0) return
+    if (paymentMethod === "havale" && havaleCreditBlocked) {
+      toast.error("Kredi limitiniz bu havale siparişi için yetersiz")
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -332,13 +345,45 @@ export default function CartPage() {
                   </div>
                 )}
 
+                {isAuthenticated && credit && paymentMethod === "havale" && (
+                  <div
+                    className={`text-xs px-3 py-2.5 rounded-lg space-y-1 ${
+                      havaleCreditBlocked
+                        ? "bg-danger/10 text-danger border border-danger/20"
+                        : "bg-white/[0.03] text-white/50 border border-white/10"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-medium">
+                      <AlertCircle size={12} />
+                      Açık hesap / kredi
+                    </div>
+                    <p>
+                      Limit {formatPrice(credit.creditLimit)} · kullanılan {formatPrice(credit.creditUsed)} · kalan{" "}
+                      {formatPrice(credit.creditRemaining)}
+                    </p>
+                    {havaleCreditBlocked && (
+                      <p>
+                        {credit.creditLimit <= 0
+                          ? "Açık hesap tanımlı değil — online ödeme seçin."
+                          : `Bu sipariş (${formatPrice(total)}) kalan limiti aşıyor. Online ödeyin veya limit artırımı isteyin.`}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {isAuthenticated && paymentMethod === "online" && (
+                  <p className="text-[11px] text-white/35 px-1">
+                    Online ödeme kredi limitinizi kullanmaz; peşin tahsil edilir.
+                  </p>
+                )}
+
                 <div className="space-y-2">
                   <Button
                     size="lg"
                     className="w-full"
                     icon={<CreditCard size={16} />}
                     onClick={handleSubmitOrder}
-                    disabled={submitting}
+                    disabled={submitting || havaleCreditBlocked}
                   >
                     {submitting
                       ? "İşleniyor..."

@@ -13,6 +13,7 @@ import {
 import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricingFromLines } from "./pricing"
 import { createInvoiceForOrder } from "./invoices"
 import { applyStockMovement, assertStockAvailable, orderItemsToStockLines, syncWarehouseUsedCapacity } from "./inventory"
+import { assertCreditAllowsOrder, getCompanyCreditSnapshot } from "./credit"
 import { decodeVin, looksLikeVin } from "./vin"
 import type {
   Product, Order, Company, User, Warehouse,
@@ -697,6 +698,12 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   const pricing = toOrderPricingFromLines(pricingLines, discountRate, input.paymentMethod, campaigns)
 
   const isOnline = input.paymentMethod === "online"
+  // Open-account (havale) consumes credit; quotations and online card do not.
+  if (!input.asQuotation && !isOnline && user.companyId) {
+    const snap = await getCompanyCreditSnapshot(user.companyId)
+    assertCreditAllowsOrder(snap, Number(pricing.grandTotal ?? 0))
+  }
+
   const status: Order["status"] = input.asQuotation
     ? "quotation"
     : isOnline
@@ -976,30 +983,44 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   let creditLimit = 0
   let openInvoicesAmount = 0
   let openInvoicesCount = 0
+  let creditUsed = 0
 
   if (user.companyId) {
-    const { data: company } = await supabase
-      .from("companies")
-      .select("credit_limit")
-      .eq("id", user.companyId)
-      .single()
+    const snap = await getCompanyCreditSnapshot(user.companyId)
+    creditLimit = snap.creditLimit
+    creditUsed = snap.creditUsed
+    openInvoicesAmount = snap.openInvoicesAmount
 
-    creditLimit = Number(company?.credit_limit ?? 0)
-
-    const { data: invoices } = await supabase
+    const { count } = await supabase
       .from("invoices")
-      .select("grand_total, status")
+      .select("*", { count: "exact", head: true })
       .eq("company_id", user.companyId)
       .in("status", ["sent", "overdue"])
-
-    openInvoicesCount = invoices?.length ?? 0
-    openInvoicesAmount = (invoices ?? []).reduce(
-      (sum, inv) => sum + Number(inv.grand_total ?? 0),
-      0
-    )
+    openInvoicesCount = count ?? 0
   }
 
-  return buildDashboardStats(orders, creditLimit, openInvoicesAmount, openInvoicesCount)
+  const stats = buildDashboardStats(orders, creditLimit, creditUsed, openInvoicesCount)
+  // Prefer full exposure (invoices + pending open-account) for used/balance
+  return {
+    ...stats,
+    currentBalance: creditUsed,
+    creditUsed,
+    openInvoicesAmount,
+  }
+}
+
+export async function getMyCreditSnapshot() {
+  const user = await getCurrentUser()
+  if (!user.companyId) {
+    return {
+      creditLimit: 0,
+      creditUsed: 0,
+      creditRemaining: 0,
+      openInvoicesAmount: 0,
+      pendingOrdersAmount: 0,
+    }
+  }
+  return getCompanyCreditSnapshot(user.companyId)
 }
 
 // ─── Campaigns ──────────────────────────────────────────────────────────────
