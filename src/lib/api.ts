@@ -54,6 +54,17 @@ export async function askAdminAssistant(
   pendingAction: { tool: string; args: Record<string, unknown> } | null
   choices?: { id: string; label: string }[]
   undoAction?: { tool: string; args: Record<string, unknown> } | null
+  cards?: {
+    type: "product"
+    id?: string
+    title: string
+    subtitle?: string
+    image?: string
+    sku?: string
+    price?: number
+    stock?: number
+    badges?: { label: string; tone?: "warning" | "danger" | "accent" | "muted" | "success" }[]
+  }[]
 }> {
   return authedFetch("/api/admin/assistant", {
     method: "POST",

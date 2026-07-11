@@ -148,7 +148,7 @@ async function searchProducts(service: SupabaseClient, args: { query: string; li
   const limit = Math.min(30, Math.max(1, Number(args.limit) || 12))
   const { data, error } = await service
     .from("products")
-    .select("id, sku, name, brand, category, base_price, is_active")
+    .select("id, sku, name, brand, category, base_price, is_active, images")
     .or(`name.ilike.%${q}%,sku.ilike.%${q}%,brand.ilike.%${q}%,category.ilike.%${q}%`)
     .limit(limit)
   if (error) return { ok: false, error: error.message }
@@ -163,6 +163,7 @@ async function searchProducts(service: SupabaseClient, args: { query: string; li
         category: p.category,
         basePrice: Number(p.base_price),
         isActive: p.is_active,
+        image: Array.isArray(p.images) && p.images[0] ? String(p.images[0]) : "",
       })),
     },
   }
@@ -683,7 +684,7 @@ async function listLowStock(service: SupabaseClient, args: { threshold?: number 
   const threshold = Math.max(1, Number(args.threshold) || 5)
   const { data, error } = await service
     .from("products")
-    .select("id, sku, name, brand, category, stock, base_price, is_active")
+    .select("id, sku, name, brand, category, stock, base_price, is_active, images")
     .eq("is_active", true)
     .limit(500)
   if (error) return { ok: false, error: error.message }
@@ -697,12 +698,14 @@ async function listLowStock(service: SupabaseClient, args: { threshold?: number 
           )
         : 0
       return {
-        sku: p.sku,
-        name: p.name,
-        brand: p.brand,
-        category: p.category,
+        id: String(p.id),
+        sku: String(p.sku),
+        name: String(p.name),
+        brand: String(p.brand ?? ""),
+        category: String(p.category ?? ""),
         stock,
         basePrice: Number(p.base_price),
+        image: Array.isArray(p.images) && p.images[0] ? String(p.images[0]) : "",
       }
     })
     .filter((p) => p.stock <= threshold)
@@ -909,23 +912,41 @@ function isUndo(text: string) {
 
 export type AssistantChoice = { id: string; label: string }
 
+export type AssistantCard = {
+  type: "product"
+  id?: string
+  title: string
+  subtitle?: string
+  image?: string
+  sku?: string
+  price?: number
+  stock?: number
+  badges?: { label: string; tone?: "warning" | "danger" | "accent" | "muted" | "success" }[]
+}
+
 export type FormattedResult = {
   reply: string
   pending: PendingAction | null
   choices?: AssistantChoice[]
   undoAction?: PendingAction | null
+  cards?: AssistantCard[]
 }
 
 function fmt(
   reply: string,
   pending: PendingAction | null = null,
-  extra?: { choices?: AssistantChoice[]; undoAction?: PendingAction | null }
+  extra?: {
+    choices?: AssistantChoice[]
+    undoAction?: PendingAction | null
+    cards?: AssistantCard[]
+  }
 ): FormattedResult {
   return {
     reply,
     pending,
     choices: extra?.choices,
     undoAction: extra?.undoAction ?? null,
+    cards: extra?.cards,
   }
 }
 
@@ -1002,11 +1023,28 @@ function formatToolResult(tool: string, result: ToolResult): FormattedResult {
   }
 
   if (tool === "search_products") {
-    const products = (data.products as { sku: string; name: string; basePrice: number; category: string }[]) ?? []
+    const products = (data.products as {
+      id?: string
+      sku: string
+      name: string
+      basePrice: number
+      category: string
+      brand?: string
+      image?: string
+    }[]) ?? []
     if (!products.length) return fmt("Ürün bulunamadı.")
-    return fmt(
-      `Bulunan ürünler:\n${products.map((p) => `• ${p.sku} — ${p.name} (${p.category}) ${formatMoney(p.basePrice)}`).join("\n")}`
-    )
+    return fmt(`“Arama” için ${products.length} ürün bulundu.`, null, {
+      cards: products.map((p) => ({
+        type: "product" as const,
+        id: p.id,
+        title: p.name,
+        subtitle: [p.brand, p.category].filter(Boolean).join(" · "),
+        sku: p.sku,
+        image: p.image,
+        price: p.basePrice,
+        badges: [{ label: p.sku, tone: "muted" as const }],
+      })),
+    })
   }
 
   if (tool === "adjust_prices") {
@@ -1230,12 +1268,39 @@ function formatToolResult(tool: string, result: ToolResult): FormattedResult {
   }
 
   if (tool === "list_low_stock") {
-    const products = (data.products as { sku: string; name: string; stock: number }[]) ?? []
+    const products = (data.products as {
+      id?: string
+      sku: string
+      name: string
+      stock: number
+      brand?: string
+      category?: string
+      basePrice?: number
+      image?: string
+    }[]) ?? []
     if (!products.length) return fmt(`Stok ≤ ${data.threshold} olan ürün yok.`)
     return fmt(
-      `Düşük stok (≤${data.threshold}, ${data.count} ürün):\n${products
-        .map((p) => `• ${p.sku} — ${p.name} — stok ${p.stock}`)
-        .join("\n")}`
+      `Düşük stok uyarısı — eşik ≤${data.threshold}, ${data.count} ürün`,
+      null,
+      {
+        cards: products.map((p) => ({
+          type: "product" as const,
+          id: p.id,
+          title: p.name,
+          subtitle: [p.brand, p.category].filter(Boolean).join(" · "),
+          sku: p.sku,
+          image: p.image,
+          price: p.basePrice,
+          stock: p.stock,
+          badges: [
+            {
+              label: p.stock <= 0 ? "Tükendi" : `Stok ${p.stock}`,
+              tone: (p.stock <= 0 ? "danger" : "warning") as "danger" | "warning",
+            },
+            { label: p.sku, tone: "muted" as const },
+          ],
+        })),
+      }
     )
   }
 
@@ -1603,6 +1668,7 @@ type ChatResult = {
   pendingAction: PendingAction | null
   choices?: AssistantChoice[]
   undoAction?: PendingAction | null
+  cards?: AssistantCard[]
 }
 
 function fromFormatted(formatted: FormattedResult, actions: string[]): ChatResult {
@@ -1612,6 +1678,7 @@ function fromFormatted(formatted: FormattedResult, actions: string[]): ChatResul
     pendingAction: formatted.pending,
     choices: formatted.choices,
     undoAction: formatted.undoAction ?? null,
+    cards: formatted.cards,
   }
 }
 
