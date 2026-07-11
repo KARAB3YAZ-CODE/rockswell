@@ -10,9 +10,18 @@ import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getOrderById } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { supabase } from "@/lib/supabase"
 import { formatPrice } from "@/lib/utils"
 import type { Order } from "@/lib/types"
 import { CreditCard, ShieldCheck, AlertTriangle, CheckCircle2 } from "lucide-react"
+
+async function authHeaders(): Promise<HeadersInit> {
+  const { data: { session } } = await supabase.auth.getSession()
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${session?.access_token ?? ""}`,
+  }
+}
 
 export default function PaymentPage() {
   const params = useParams()
@@ -40,7 +49,7 @@ export default function PaymentPage() {
 
       const res = await fetch("/api/payment/paytr/token", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
         body: JSON.stringify({ orderId, email: user?.email }),
       })
       const data = await res.json()
@@ -91,7 +100,7 @@ export default function PaymentPage() {
     try {
       const res = await fetch("/api/payment/paytr/confirm-test", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
         body: JSON.stringify({ orderId }),
       })
       const data = await res.json()

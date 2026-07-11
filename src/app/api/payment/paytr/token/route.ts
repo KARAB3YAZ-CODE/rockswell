@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getServiceClient } from "@/lib/supabase-admin"
+import { requireBearerUser, canAccessOrder } from "@/lib/auth-api"
 import { getPaytrConfig, orderIdToOid, buildTokenHash } from "@/lib/paytr"
 
 function getBaseUrl(request: Request): string {
@@ -13,13 +13,19 @@ function getBaseUrl(request: Request): string {
 
 export async function POST(request: Request) {
   try {
-    const { orderId, email } = await request.json()
+    const auth = await requireBearerUser(request)
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    const body = await request.json().catch(() => ({}))
+    const orderId = String((body as { orderId?: string }).orderId ?? "")
+    const emailOverride = (body as { email?: string }).email
     if (!orderId) {
       return NextResponse.json({ error: "orderId gerekli" }, { status: 400 })
     }
 
-    const service = getServiceClient()
-    const { data: order, error } = await service
+    const { data: order, error } = await auth.service
       .from("orders")
       .select("*")
       .eq("id", orderId)
@@ -27,6 +33,21 @@ export async function POST(request: Request) {
 
     if (error || !order) {
       return NextResponse.json({ error: "Sipariş bulunamadı" }, { status: 404 })
+    }
+
+    if (!canAccessOrder(auth, order)) {
+      return NextResponse.json({ error: "Bu siparişe erişiminiz yok" }, { status: 403 })
+    }
+
+    const payment = (order.payment ?? {}) as { method?: string; status?: string }
+    if (payment.method !== "online") {
+      return NextResponse.json({ error: "Bu sipariş online ödeme için değil" }, { status: 400 })
+    }
+    if (payment.status === "paid" || ["confirmed", "processing", "shipped", "delivered"].includes(String(order.status))) {
+      return NextResponse.json({ error: "Sipariş zaten ödenmiş" }, { status: 409 })
+    }
+    if (String(order.status) !== "draft") {
+      return NextResponse.json({ error: "Sipariş ödeme için uygun durumda değil" }, { status: 400 })
     }
 
     const amount = Number(order.pricing?.grandTotal ?? 0)
@@ -39,7 +60,6 @@ export async function POST(request: Request) {
       process.env.PAYTR_ALLOW_TEST_MODE === "1" ||
       process.env.NODE_ENV !== "production"
 
-    // Not configured: only allow test confirm in non-production (or explicit flag).
     if (!config) {
       if (!allowTest) {
         return NextResponse.json(
@@ -50,7 +70,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ testMode: true, amount })
     }
 
-    const { data: company } = await service
+    const { data: company } = await auth.service
       .from("companies")
       .select("name, phone, address, email")
       .eq("id", order.company_id)
@@ -72,7 +92,13 @@ export async function POST(request: Request) {
     )
     const userBasket = Buffer.from(JSON.stringify(basket)).toString("base64")
 
-    const userEmail = email || company?.email || "musteri@rockswell.store"
+    const userEmail =
+      (typeof emailOverride === "string" && emailOverride.includes("@")
+        ? emailOverride
+        : null) ||
+      auth.email ||
+      company?.email ||
+      "musteri@rockswell.store"
     const noInstallment = "0"
     const maxInstallment = "0"
     const currency = "TL"
@@ -90,7 +116,11 @@ export async function POST(request: Request) {
     })
 
     const baseUrl = getBaseUrl(request)
-    const addr = company?.address ?? {}
+    const addr = (company?.address ?? {}) as {
+      street?: string
+      district?: string
+      city?: string
+    }
     const form = new URLSearchParams({
       merchant_id: config.merchantId,
       user_ip: userIp,
@@ -99,11 +129,12 @@ export async function POST(request: Request) {
       payment_amount: String(paymentAmount),
       paytr_token: paytrToken,
       user_basket: userBasket,
-      debug_on: "1",
+      debug_on: config.testMode ? "1" : "0",
       no_installment: noInstallment,
       max_installment: maxInstallment,
       user_name: company?.name ?? "Müşteri",
-      user_address: `${addr.street ?? ""} ${addr.district ?? ""} ${addr.city ?? ""}`.trim() || "Türkiye",
+      user_address:
+        `${addr.street ?? ""} ${addr.district ?? ""} ${addr.city ?? ""}`.trim() || "Türkiye",
       user_phone: company?.phone ?? "0000000000",
       merchant_ok_url: `${baseUrl}/orders/${order.id}?paid=1`,
       merchant_fail_url: `${baseUrl}/payment/${order.id}?failed=1`,
@@ -112,10 +143,16 @@ export async function POST(request: Request) {
       test_mode: config.testMode ? "1" : "0",
     })
 
-    // Persist the oid mapping so the callback can resolve the order.
-    await service
+    await auth.service
       .from("orders")
-      .update({ payment: { ...(order.payment ?? {}), merchantOid } })
+      .update({
+        payment: {
+          ...(order.payment ?? {}),
+          method: "online",
+          status: payment.status ?? "pending",
+          merchantOid,
+        },
+      })
       .eq("id", order.id)
 
     const res = await fetch("https://www.paytr.com/odeme/api/get-token", {

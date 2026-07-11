@@ -17,7 +17,7 @@ import {
 } from "@/lib/pricing"
 import { ADMIN_URL, SITE_URL } from "@/lib/admin-host"
 import { formatPrice } from "@/lib/utils"
-import { Settings, Wrench, Tag, Plus, Trash2, Unlock } from "lucide-react"
+import { Settings, Wrench, Tag, Plus, Trash2, Unlock, Building2 } from "lucide-react"
 
 export default function AdminSettingsPage() {
   const { data, loading, refetch } = useData(() => getSiteSettings(), [])
@@ -54,6 +54,10 @@ export default function AdminSettingsPage() {
         priceUpdateDate: form.priceUpdateDate,
         priceUpdateMessage: form.priceUpdateMessage,
         volumeDiscountTiers: form.volumeDiscountTiers,
+        bankName: form.bankName,
+        bankIban: form.bankIban,
+        bankAccountName: form.bankAccountName,
+        bankBranch: form.bankBranch,
       })
       setForm(next)
       refetch()
@@ -71,7 +75,7 @@ export default function AdminSettingsPage() {
         icon={Settings}
         tone="warning"
         title="Sistem Ayarları"
-        subtitle="Bakım modu, fiyat güncelleme, hacim iskonto kademeleri"
+        subtitle="Bakım modu, fiyat güncelleme, hacim iskonto, havale hesabı"
       />
 
       <GlassCard intensity="light" className="p-5 space-y-4">
@@ -216,6 +220,54 @@ export default function AdminSettingsPage() {
                 </button>
               </div>
             ))}
+          </div>
+        )}
+      </GlassCard>
+
+      <GlassCard intensity="light" className="p-5 space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Building2 size={16} className="text-accent" />
+          <h3 className="text-sm font-semibold text-white">Havale / EFT Hesabı</h3>
+        </div>
+        <p className="text-xs text-white/40">
+          Bayilere sipariş sonrası gösterilir. Açıklama alanına sipariş numarası (referans) yazılmalıdır.
+        </p>
+        {loading || !form ? (
+          <p className="text-sm text-white/40">Yükleniyor…</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Banka">
+              <input
+                value={form.bankName}
+                onChange={(e) => setForm({ ...form, bankName: e.target.value })}
+                placeholder="Örn. Garanti BBVA"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Şube (opsiyonel)">
+              <input
+                value={form.bankBranch}
+                onChange={(e) => setForm({ ...form, bankBranch: e.target.value })}
+                placeholder="Şube adı"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Hesap sahibi">
+              <input
+                value={form.bankAccountName}
+                onChange={(e) => setForm({ ...form, bankAccountName: e.target.value })}
+                placeholder="Rockswell Otomotiv…"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="IBAN">
+              <input
+                value={form.bankIban}
+                onChange={(e) => setForm({ ...form, bankIban: e.target.value })}
+                placeholder="TR00 0000 0000 0000 0000 0000 00"
+                className={`${inputCls} font-mono`}
+              />
+            </Field>
           </div>
         )}
       </GlassCard>

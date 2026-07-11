@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
-import { getOrderById, updateOrderStatus, getAllCompanies, requestOrderReturn, getAllInvoices, updateOrderShipping } from "@/lib/api"
+import { getOrderById, updateOrderStatus, getAllCompanies, requestOrderReturn, approveOrderReturn, rejectOrderReturn, getAllInvoices, updateOrderShipping, getHavaleReceiptUrl } from "@/lib/api"
 import { adminPath } from "@/lib/admin-host"
-import { formatDate, formatPrice, cn } from "@/lib/utils"
+import { formatDate, formatPrice, formatIban, cn } from "@/lib/utils"
 import { orderStatusLabels } from "@/components/admin/ui"
 import type { Order } from "@/lib/types"
 import {
@@ -46,11 +46,13 @@ const statusColor: Record<string, "default" | "warning" | "info" | "success" | "
 
 function nextStatus(status: Order["status"]): { status: Order["status"]; label: string } | null {
   switch (status) {
-    case "pending_approval":
+    case "approved":
     case "quotation":
       return { status: "confirmed", label: "Onayla" }
+    case "pending_approval":
+      // Bayi onayı bekleniyor — Rockswell henüz onaylamamalı
+      return null
     case "confirmed":
-    case "approved":
       return { status: "processing", label: "Hazırlığa Al" }
     case "processing":
       return { status: "shipped", label: "Kargola" }
@@ -87,14 +89,30 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
 
   const returnableItems = useMemo(() => {
     if (!order) return []
+    const pendingByProduct = new Map<string, number>()
+    for (const r of order.returns ?? []) {
+      if (r.status !== "pending") continue
+      for (const line of r.items) {
+        pendingByProduct.set(
+          line.productId,
+          (pendingByProduct.get(line.productId) ?? 0) + Number(line.quantity)
+        )
+      }
+    }
     return order.items
       .map((item) => {
         const returned = Number(item.returnedQuantity ?? 0)
-        const max = Math.max(0, item.quantity - returned)
+        const pending = pendingByProduct.get(item.productId) ?? 0
+        const max = Math.max(0, item.quantity - returned - pending)
         return { ...item, returned, max }
       })
       .filter((i) => i.max > 0)
   }, [order])
+
+  const pendingReturns = useMemo(
+    () => (order?.returns ?? []).filter((r) => r.status === "pending"),
+    [order]
+  )
 
   const canReturn = order?.status === "delivered" && returnableItems.length > 0
 
@@ -147,6 +165,24 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
       refetch()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "İade oluşturulamadı")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const reviewReturn = async (returnId: string, action: "approve" | "reject") => {
+    setBusy(true)
+    try {
+      if (action === "approve") {
+        await approveOrderReturn(id, returnId)
+        toast.success("İade onaylandı — stok güncellendi")
+      } else {
+        await rejectOrderReturn(id, returnId)
+        toast.success("İade talebi reddedildi")
+      }
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "İşlem başarısız")
     } finally {
       setBusy(false)
     }
@@ -210,6 +246,12 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                   <Button size="sm" disabled={busy} onClick={() => runStatus(next.status, next.label)}>
                     {next.label}
                   </Button>
+                )}
+                {order.status === "pending_approval" && (
+                  <Badge variant="warning" size="md">Bayi onayı bekleniyor</Badge>
+                )}
+                {pendingReturns.length > 0 && (
+                  <Badge variant="warning" size="md">{pendingReturns.length} iade talebi</Badge>
                 )}
                 {canReturn && (
                   <Button size="sm" variant="secondary" disabled={busy} icon={<RotateCcw size={14} />} onClick={() => setShowReturn((v) => !v)}>
@@ -320,12 +362,40 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
             <GlassCard intensity="light" className="p-5 space-y-3">
               <h2 className="text-sm font-semibold text-white">İade geçmişi</h2>
               {order.returns.map((r) => (
-                <div key={r.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3 space-y-1">
-                  <p className="text-xs text-white/40">{formatDate(r.createdAt)}</p>
+                <div key={r.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-white/40">{formatDate(r.createdAt)}</p>
+                    <Badge
+                      variant={
+                        r.status === "approved" || !r.status
+                          ? "success"
+                          : r.status === "rejected"
+                            ? "danger"
+                            : "warning"
+                      }
+                      size="sm"
+                    >
+                      {r.status === "pending"
+                        ? "Onay bekliyor"
+                        : r.status === "rejected"
+                          ? "Reddedildi"
+                          : "Onaylandı"}
+                    </Badge>
+                  </div>
                   <p className="text-sm text-white/70">{r.reason}</p>
                   <p className="text-xs text-white/40">
                     {r.items.map((i) => `${i.productName} × ${i.quantity}`).join(" · ")}
                   </p>
+                  {r.status === "pending" && (
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" disabled={busy} onClick={() => reviewReturn(r.id, "approve")}>
+                        Onayla + stok iade
+                      </Button>
+                      <Button size="sm" variant="secondary" disabled={busy} onClick={() => reviewReturn(r.id, "reject")}>
+                        Reddet
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </GlassCard>
@@ -360,6 +430,40 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
                 </h2>
                 <Row label="Yöntem" value={String(order.payment.method ?? "—")} />
                 <Row label="Durum" value={String(order.payment.status ?? "—")} />
+                {order.payment.method === "havale" && (
+                  <div className="pt-2 space-y-2 border-t border-white/5">
+                    {order.payment.referenceCode && (
+                      <Row label="Referans" value={order.payment.referenceCode} />
+                    )}
+                    {order.payment.bankIban && (
+                      <Row label="IBAN" value={formatIban(order.payment.bankIban)} />
+                    )}
+                    {order.payment.receiptPath ? (
+                      <div className="flex flex-wrap gap-2 items-center pt-1">
+                        <Badge variant="success" size="sm">
+                          {order.payment.receiptFileName || "Dekont var"}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={async () => {
+                            try {
+                              const url = await getHavaleReceiptUrl(id)
+                              window.open(url, "_blank", "noopener,noreferrer")
+                            } catch (e) {
+                              toast.error(e instanceof Error ? e.message : "Açılamadı")
+                            }
+                          }}
+                        >
+                          Dekontu aç
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-warning/80">Dekont henüz yüklenmedi</p>
+                    )}
+                  </div>
+                )}
               </GlassCard>
               <GlassCard intensity="light" className="p-5 space-y-3">
                 <h2 className="text-sm font-semibold text-white flex items-center gap-2">

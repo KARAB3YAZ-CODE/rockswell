@@ -57,7 +57,7 @@ export function buildTokenHash(params: {
     .digest("base64")
 }
 
-/** Verify the hash PayTR sends to the callback URL. */
+/** Verify the hash PayTR sends to the callback URL (timing-safe). */
 export function verifyCallbackHash(params: {
   config: PaytrConfig
   merchantOid: string
@@ -71,5 +71,8 @@ export function verifyCallbackHash(params: {
     .update(params.merchantOid + config.merchantSalt + params.status + params.totalAmount)
     .digest("base64")
 
-  return expected === params.hash
+  const a = Buffer.from(expected)
+  const b = Buffer.from(String(params.hash ?? ""))
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
 }

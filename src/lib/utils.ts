@@ -63,3 +63,9 @@ export function truncate(str: string, length: number) {
   if (str.length <= length) return str
   return str.slice(0, length) + "..."
 }
+
+/** Format Turkish IBAN with spaces for display. */
+export function formatIban(iban: string): string {
+  const clean = iban.replace(/\s+/g, "").toUpperCase()
+  return clean.replace(/(.{4})/g, "$1 ").trim()
+}

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server"
-import { getServiceClient } from "@/lib/supabase-admin"
+import { requireBearerUser, canAccessOrder } from "@/lib/auth-api"
 import { getPaytrConfig } from "@/lib/paytr"
-import { createInvoiceForOrder } from "@/lib/invoices"
+import { finalizePaidOnlineOrder } from "@/lib/payment-finalize"
 
 /**
  * Test-only confirmation used while PayTR credentials are not configured.
  * Hard-disabled in production unless PAYTR_ALLOW_TEST_MODE=1.
+ * Requires authenticated order owner (or admin).
  */
 export async function POST(request: Request) {
   const allowTest =
@@ -23,46 +24,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "PayTR aktif — test onayı devre dışı" }, { status: 403 })
   }
 
+  const auth = await requireBearerUser(request)
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  }
+
   try {
-    const { orderId } = await request.json()
+    const body = await request.json().catch(() => ({}))
+    const orderId = String((body as { orderId?: string }).orderId ?? "")
     if (!orderId) {
       return NextResponse.json({ error: "orderId gerekli" }, { status: 400 })
     }
 
-    const service = getServiceClient()
-    const { data: order } = await service
+    const { data: order, error: fetchErr } = await auth.service
       .from("orders")
       .select("*")
       .eq("id", orderId)
       .single()
 
-    const { error } = await service
-      .from("orders")
-      .update({
-        status: "confirmed",
-        payment: {
-          ...(order?.payment ?? {}),
-          method: "online",
-          status: "paid",
-          paidDate: new Date().toISOString(),
-          testMode: true,
-        },
-      })
-      .eq("id", orderId)
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    if (fetchErr || !order) {
+      return NextResponse.json({ error: "Sipariş bulunamadı" }, { status: 404 })
     }
 
-    if (order) {
-      try {
-        await createInvoiceForOrder(service, order)
-      } catch {
-        /* best-effort */
-      }
+    if (!canAccessOrder(auth, order)) {
+      return NextResponse.json({ error: "Bu siparişe erişiminiz yok" }, { status: 403 })
     }
 
-    return NextResponse.json({ ok: true })
+    const payment = (order.payment ?? {}) as { method?: string; status?: string }
+    if (payment.method !== "online") {
+      return NextResponse.json({ error: "Bu sipariş online ödeme için değil" }, { status: 400 })
+    }
+    if (String(order.status) !== "draft") {
+      return NextResponse.json({ error: "Sipariş test onayı için uygun durumda değil" }, { status: 400 })
+    }
+
+    const result = await finalizePaidOnlineOrder(auth.service, order, { testMode: true })
+    return NextResponse.json({ ok: true, alreadyPaid: result.alreadyPaid })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Onay başarısız"
     return NextResponse.json({ error: message }, { status: 500 })

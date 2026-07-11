@@ -559,7 +559,7 @@ async function listPendingOrders(service: SupabaseClient): Promise<ToolResult> {
   const { data, error } = await service
     .from("orders")
     .select("id, order_number, status, pricing, created_at, companies(name)")
-    .eq("status", "pending_approval")
+    .eq("status", "approved")
     .order("created_at", { ascending: false })
     .limit(20)
   if (error) return { ok: false, error: error.message }
@@ -581,14 +581,20 @@ async function approvePendingOrders(
   service: SupabaseClient,
   args: { dryRun?: boolean }
 ): Promise<ToolResult> {
+  // Rockswell queue only: bayi onayı tamamlanmış (approved) siparişler → confirmed
   const { data, error } = await service
     .from("orders")
     .select("id, order_number, pricing, companies(name)")
-    .eq("status", "pending_approval")
+    .eq("status", "approved")
     .limit(50)
   if (error) return { ok: false, error: error.message }
   const orders = data ?? []
-  if (!orders.length) return { ok: true, data: { dryRun: true, count: 0, message: "Onay bekleyen sipariş yok" } }
+  if (!orders.length) {
+    return {
+      ok: true,
+      data: { dryRun: true, count: 0, message: "Rockswell onayı bekleyen sipariş yok" },
+    }
+  }
 
   if (args.dryRun !== false) {
     return {
@@ -607,10 +613,27 @@ async function approvePendingOrders(
 
   let updated = 0
   for (const o of orders) {
+    const { data: existing } = await service
+      .from("orders")
+      .select("id, status, approval_flow, items")
+      .eq("id", o.id)
+      .maybeSingle()
+    if (!existing || String(existing.status) !== "approved") continue
+
+    const now = new Date().toISOString()
+    const flow = Array.isArray(existing.approval_flow)
+      ? (existing.approval_flow as Record<string, unknown>[]).map((step) =>
+          String(step.role) === "admin"
+            ? { ...step, status: "approved", updatedAt: now }
+            : step
+        )
+      : existing.approval_flow
+
     const { data: row, error: upErr } = await service
       .from("orders")
-      .update({ status: "confirmed" })
+      .update({ status: "confirmed", approval_flow: flow })
       .eq("id", o.id)
+      .eq("status", "approved")
       .select("id, order_number, company_id, items, pricing")
       .single()
     if (!upErr && row) {
@@ -1282,9 +1305,9 @@ function formatToolResult(tool: string, result: ToolResult): FormattedResult {
 
   if (tool === "list_pending_orders") {
     const orders = (data.orders as { orderNumber: string; companyName: string; total: number }[]) ?? []
-    if (!orders.length) return fmt("Onay bekleyen sipariş yok.")
+    if (!orders.length) return fmt("Rockswell onayı bekleyen sipariş yok.")
     return fmt(
-      `Onay bekleyen (${orders.length}):\n${orders
+      `Rockswell onayı bekleyen (${orders.length}):\n${orders
         .map((o) => `• ${o.orderNumber} — ${o.companyName} — ${formatMoney(o.total)}`)
         .join("\n")}`,
       null,
@@ -1295,17 +1318,17 @@ function formatToolResult(tool: string, result: ToolResult): FormattedResult {
   }
 
   if (tool === "approve_pending_orders") {
-    if (data.count === 0) return fmt("Onay bekleyen sipariş yok.")
+    if (data.count === 0) return fmt("Rockswell onayı bekleyen sipariş yok.")
     if (data.dryRun) {
       const samples = (data.samples as { orderNumber: string; companyName: string; total: number }[]) ?? []
       return fmt(
-        `${data.count} sipariş onaylanacak:\n${samples
+        `${data.count} sipariş Rockswell onayı ile confirmed olacak:\n${samples
           .map((o) => `• ${o.orderNumber} — ${o.companyName} — ${formatMoney(o.total)}`)
           .join("\n")}\n\nOnaylıyor musunuz?`,
         { tool: "approve_pending_orders", args: { dryRun: false } }
       )
     }
-    return fmt(`${data.updated} sipariş onaylandı (confirmed).`)
+    return fmt(`${data.updated} sipariş Rockswell onayı ile confirmed yapıldı.`)
   }
 
   if (tool === "list_companies") {

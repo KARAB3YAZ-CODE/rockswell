@@ -15,7 +15,7 @@ import { createInvoiceForOrder } from "./invoices"
 import { applyStockMovement, assertStockAvailable, orderItemsToStockLines, syncWarehouseUsedCapacity } from "./inventory"
 import { assertCreditAllowsOrder, assertOpenAccountPeriodClear, getCompanyCreditSnapshot, OPEN_ACCOUNT_METHOD } from "./credit"
 import { decodeVin, looksLikeVin } from "./vin"
-import { canPlaceOrder } from "./permissions"
+import { canPlaceOrder, canViewCredit, canViewInvoices } from "./permissions"
 import type {
   Product, Order, Company, User, Warehouse,
   Campaign, Notification, DashboardStats, Address, Invoice,
@@ -676,7 +676,7 @@ export async function getOrders(): Promise<Order[]> {
 }
 
 export async function getOrderById(id: string): Promise<Order> {
-  await requireAuth()
+  const user = await getCurrentUser()
   const { data, error } = await supabase
     .from("orders")
     .select("*")
@@ -684,6 +684,10 @@ export async function getOrderById(id: string): Promise<Order> {
     .single()
 
   if (error || !data) err(`Sipariş bulunamadı: ${id}`)
+  if (user.role !== "admin") {
+    const sameCompany = user.companyId && String(data.company_id) === user.companyId
+    if (!sameCompany) err("Bu siparişe erişiminiz yok")
+  }
   return mapOrder(data)
 }
 
@@ -729,69 +733,100 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
 
   const discountRate = await getCustomerDiscountRate()
   const productIds = [...new Set(input.items.map((i) => i.productId))]
+  type PriceRow = {
+    product_id: string
+    net_price: number | null
+    dealer_price: number | null
+    campaign_price: number | null
+    contract_price: number | null
+  }
   const [{ data: productRows }, { data: priceRows }, campaigns, siteSettings] = await Promise.all([
     supabase
       .from("products")
-      .select("id, category, brand, compatible_vehicles, stock, name")
+      .select("id, sku, category, brand, compatible_vehicles, stock, name, base_price, is_active")
       .in("id", productIds),
     user.companyId
       ? supabase
           .from("customer_prices")
-          .select("product_id")
+          .select("product_id, net_price, dealer_price, campaign_price, contract_price")
           .eq("company_id", user.companyId)
           .in("product_id", productIds)
-      : Promise.resolve({ data: [] as { product_id: string }[] }),
+      : Promise.resolve({ data: [] as PriceRow[] }),
     getCampaigns().catch(() => [] as Campaign[]),
     getSiteSettings().catch(() => null),
   ])
 
-  const productMap = new Map(
-    (productRows ?? []).map((row) => [
-      String(row.id),
-      {
-        category: String(row.category ?? ""),
-        brand: String(row.brand ?? ""),
-        name: String(row.name ?? ""),
-        stock: row.stock,
-        vehicleBrands: ((row.compatible_vehicles as { brand?: string }[]) ?? [])
-          .map((v) => String(v.brand ?? ""))
-          .filter(Boolean),
-      },
-    ])
+  const priceByProduct = new Map(
+    ((priceRows ?? []) as PriceRow[]).map((r) => [String(r.product_id), r])
   )
-  const lockedIds = new Set((priceRows ?? []).map((r) => String(r.product_id)))
 
-  // Stock availability check (quotations do not reserve)
-  if (!input.asQuotation) {
-    for (const item of input.items) {
-      const meta = productMap.get(item.productId)
-      if (!meta) err(`Ürün bulunamadı: ${item.productName}`)
-      assertStockAvailable(meta.stock, item.warehouseId, item.quantity, item.productName || meta.name)
+  const productMap = new Map(
+    (productRows ?? []).map((row) => {
+      const id = String(row.id)
+      const cp = priceByProduct.get(id)
+      const contract =
+        cp?.net_price ?? cp?.contract_price ?? cp?.campaign_price ?? cp?.dealer_price
+      const priceLocked = contract != null && Number(contract) >= 0
+      const unitPrice = priceLocked
+        ? Number(contract)
+        : Math.max(0, Number(row.base_price ?? 0))
+      return [
+        id,
+        {
+          category: String(row.category ?? ""),
+          brand: String(row.brand ?? ""),
+          name: String(row.name ?? ""),
+          sku: String(row.sku ?? ""),
+          stock: row.stock,
+          isActive: row.is_active !== false,
+          unitPrice,
+          priceLocked,
+          vehicleBrands: ((row.compatible_vehicles as { brand?: string }[]) ?? [])
+            .map((v) => String(v.brand ?? ""))
+            .filter(Boolean),
+        },
+      ] as const
+    })
+  )
+
+  // Stock + catalog integrity (quotations do not reserve)
+  for (const item of input.items) {
+    const meta = productMap.get(item.productId)
+    if (!meta || !meta.isActive) err(`Ürün bulunamadı veya pasif: ${item.productName || item.productId}`)
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+      err(`Geçersiz adet: ${meta.name}`)
+    }
+    if (!input.asQuotation) {
+      assertStockAvailable(meta.stock, item.warehouseId, item.quantity, meta.name)
     }
   }
 
-  const orderItems: Order["items"] = input.items.map((item) => ({
-    productId: item.productId,
-    productName: item.productName,
-    sku: item.sku,
-    brand: item.brand,
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    discountRate: lockedIds.has(item.productId) ? 0 : discountRate,
-    totalPrice: item.unitPrice * item.quantity,
-    warehouseId: item.warehouseId,
-    stockLocation: "",
-  }))
+  const orderItems: Order["items"] = input.items.map((item) => {
+    const meta = productMap.get(item.productId)!
+    const qty = Math.floor(item.quantity)
+    return {
+      productId: item.productId,
+      productName: meta.name,
+      sku: meta.sku,
+      brand: meta.brand,
+      quantity: qty,
+      unitPrice: meta.unitPrice,
+      discountRate: meta.priceLocked ? 0 : discountRate,
+      totalPrice: meta.unitPrice * qty,
+      warehouseId: item.warehouseId,
+      stockLocation: "",
+    }
+  })
 
-  const pricingLines = input.items.map((item) => {
-    const meta = productMap.get(item.productId)
+  const pricingLines = orderItems.map((item) => {
+    const meta = productMap.get(item.productId)!
     return {
       unitPrice: item.unitPrice,
       quantity: item.quantity,
-      priceLocked: lockedIds.has(item.productId),
-      category: meta?.category,
-      brand: meta?.brand ?? item.brand,
-      vehicleBrands: meta?.vehicleBrands,
+      priceLocked: meta.priceLocked,
+      category: meta.category,
+      brand: meta.brand,
+      vehicleBrands: meta.vehicleBrands,
     }
   })
   const pricing = toOrderPricingFromLines(
@@ -844,9 +879,23 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     approvalFlow = [dealerStep, adminStep]
   }
 
-  const payment = {
+  const orderNumber = generateOrderNumber()
+
+  const payment: Order["payment"] = {
     method: input.paymentMethod,
-    status: "pending" as const,
+    status: "pending",
+  }
+
+  if (input.paymentMethod === "havale" && !input.asQuotation) {
+    const bank = siteSettings
+    if (!bank?.bankIban) {
+      err("Havale hesabı henüz tanımlanmamış. Lütfen yöneticiye bildirin veya online/açık hesap seçin.")
+    }
+    payment.referenceCode = orderNumber
+    payment.bankName = bank.bankName || undefined
+    payment.bankIban = bank.bankIban
+    payment.bankAccountName = bank.bankAccountName || undefined
+    payment.bankBranch = bank.bankBranch || undefined
   }
 
   const shipping = {
@@ -859,7 +908,7 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   const { data, error } = await supabase
     .from("orders")
     .insert({
-      order_number: generateOrderNumber(),
+      order_number: orderNumber,
       company_id: user.companyId,
       user_id: user.id,
       status,
@@ -1049,10 +1098,12 @@ export async function updateOrderStatus(
   const flow = normalizeApprovalFlow(existing.approval_flow)
   const dealerPending = flow.some((s) => s.role === "company_admin" && s.status === "pending")
   if (
-    dealerPending &&
     prev === "pending_approval" &&
     ["confirmed", "processing", "shipped", "delivered", "approved"].includes(status)
   ) {
+    err("Önce bayi (firma yöneticisi) onayı gerekli")
+  }
+  if (dealerPending && status === "approved") {
     err("Önce bayi (firma yöneticisi) onayı gerekli")
   }
 
@@ -1231,7 +1282,129 @@ export async function updateOrderShipping(
   return mapped
 }
 
-/** Dealer/admin partial or full return for a delivered order. */
+type OrderItemRow = {
+  productId: string
+  productName: string
+  sku: string
+  brand: string
+  quantity: number
+  returnedQuantity?: number
+  warehouseId: string
+  unitPrice: number
+  discountRate: number
+  totalPrice: number
+  stockLocation: string
+}
+
+function pendingReturnQtyByProduct(returns: Order["returns"] | unknown): Map<string, number> {
+  const map = new Map<string, number>()
+  if (!Array.isArray(returns)) return map
+  for (const r of returns as Order["returns"]) {
+    if (r.status === "rejected") continue
+    // pending or approved both reserve returnable qty; approved already in returnedQuantity
+    if (r.status === "approved") continue
+    for (const line of r.items ?? []) {
+      const id = String(line.productId)
+      map.set(id, (map.get(id) ?? 0) + Number(line.quantity ?? 0))
+    }
+  }
+  return map
+}
+
+function buildReturnLines(
+  items: OrderItemRow[],
+  lines: Array<{ productId: string; quantity: number }>,
+  pendingByProduct: Map<string, number>
+) {
+  const returnLines: Array<{
+    productId: string
+    productName: string
+    sku: string
+    brand: string
+    quantity: number
+    warehouseId: string
+  }> = []
+
+  for (const item of items) {
+    const req = lines.find((l) => l.productId === item.productId)
+    if (!req || req.quantity <= 0) continue
+    const already = Number(item.returnedQuantity ?? 0)
+    const pending = pendingByProduct.get(item.productId) ?? 0
+    const maxReturnable = Math.max(0, Number(item.quantity) - already - pending)
+    const qty = Math.min(Math.floor(req.quantity), maxReturnable)
+    if (qty <= 0) continue
+    returnLines.push({
+      productId: item.productId,
+      productName: item.productName,
+      sku: item.sku,
+      brand: item.brand,
+      quantity: qty,
+      warehouseId: item.warehouseId,
+    })
+  }
+  return returnLines
+}
+
+/** Apply an approved return: bump returnedQuantity + restock. */
+async function applyApprovedReturnToOrder(
+  existing: Record<string, unknown>,
+  returnLines: Array<{
+    productId: string
+    productName: string
+    sku: string
+    brand: string
+    quantity: number
+    warehouseId: string
+  }>,
+  note: string,
+  returns: Order["returns"]
+): Promise<Order> {
+  const items = (Array.isArray(existing.items) ? existing.items : []) as OrderItemRow[]
+  const nextItems = items.map((item) => {
+    const line = returnLines.find((l) => l.productId === item.productId)
+    if (!line) return item
+    return {
+      ...item,
+      returnedQuantity: Number(item.returnedQuantity ?? 0) + line.quantity,
+    }
+  })
+
+  const allReturned = nextItems.every(
+    (i) => Number(i.returnedQuantity ?? 0) >= Number(i.quantity)
+  )
+  const summary = returnLines.map((l) => `${l.productName} × ${l.quantity}`).join(", ")
+  const notes = [String(existing.notes ?? "").trim(), `İade onaylandı: ${summary} — ${note}`]
+    .filter(Boolean)
+    .join("\n")
+
+  const patch: Record<string, unknown> = {
+    items: nextItems,
+    returns,
+    notes,
+  }
+  if (allReturned) patch.status = "returned"
+
+  const { data, error } = await supabase
+    .from("orders")
+    .update(patch)
+    .eq("id", String(existing.id))
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "İade uygulanamadı")
+
+  try {
+    await applyStockMovement(supabase, orderItemsToStockLines(returnLines), "restock")
+  } catch (e) {
+    err(e instanceof Error ? e.message : "Stok iadesi başarısız")
+  }
+
+  return mapOrder(data)
+}
+
+/**
+ * Dealer: creates a pending return (no restock until admin approves).
+ * Admin: applies return immediately (restock + returnedQuantity).
+ */
 export async function requestOrderReturn(
   id: string,
   reason: string,
@@ -1255,87 +1428,132 @@ export async function requestOrderReturn(
     err("Yalnızca teslim edilmiş siparişler iade edilebilir")
   }
 
-  const items = (Array.isArray(existing.items) ? existing.items : []) as Array<{
-    productId: string
-    productName: string
-    sku: string
-    brand: string
-    quantity: number
-    returnedQuantity?: number
-    warehouseId: string
-    unitPrice: number
-    discountRate: number
-    totalPrice: number
-    stockLocation: string
-  }>
-
-  const returnLines: Array<{
-    productId: string
-    productName: string
-    sku: string
-    brand: string
-    quantity: number
-    warehouseId: string
-  }> = []
-
-  const nextItems = items.map((item) => {
-    const req = lines.find((l) => l.productId === item.productId)
-    if (!req || req.quantity <= 0) return { ...item, returnedQuantity: Number(item.returnedQuantity ?? 0) }
-    const already = Number(item.returnedQuantity ?? 0)
-    const maxReturnable = Math.max(0, Number(item.quantity) - already)
-    const qty = Math.min(Math.floor(req.quantity), maxReturnable)
-    if (qty <= 0) return { ...item, returnedQuantity: already }
-    returnLines.push({
-      productId: item.productId,
-      productName: item.productName,
-      sku: item.sku,
-      brand: item.brand,
-      quantity: qty,
-      warehouseId: item.warehouseId,
-    })
-    return { ...item, returnedQuantity: already + qty }
-  })
-
+  const items = (Array.isArray(existing.items) ? existing.items : []) as OrderItemRow[]
+  const prevReturns = (Array.isArray(existing.returns) ? existing.returns : []) as Order["returns"]
+  const pendingByProduct = pendingReturnQtyByProduct(prevReturns)
+  const returnLines = buildReturnLines(items, lines, pendingByProduct)
   if (!returnLines.length) err("Seçilen ürünlerde iade edilebilir adet kalmadı")
 
-  const prevReturns = Array.isArray(existing.returns) ? existing.returns : []
-  const newReturn = {
+  const newReturn: Order["returns"][number] = {
     id: crypto.randomUUID(),
     reason: note,
     createdAt: new Date().toISOString(),
     createdBy: user.id,
+    status: user.role === "admin" ? "approved" : "pending",
+    reviewedAt: user.role === "admin" ? new Date().toISOString() : undefined,
+    reviewedBy: user.role === "admin" ? user.id : undefined,
     items: returnLines,
   }
 
-  const allReturned = nextItems.every(
-    (i) => Number(i.returnedQuantity ?? 0) >= Number(i.quantity)
-  )
+  if (user.role === "admin") {
+    return applyApprovedReturnToOrder(
+      existing as Record<string, unknown>,
+      returnLines,
+      note,
+      [...prevReturns, newReturn]
+    )
+  }
+
   const summary = returnLines.map((l) => `${l.productName} × ${l.quantity}`).join(", ")
-  const notes = [String(existing.notes ?? "").trim(), `İade: ${summary} — ${note}`]
+  const notes = [String(existing.notes ?? "").trim(), `İade talebi (onay bekliyor): ${summary} — ${note}`]
     .filter(Boolean)
     .join("\n")
 
-  const patch: Record<string, unknown> = {
-    items: nextItems,
-    returns: [...prevReturns, newReturn],
-    notes,
-  }
-  if (allReturned) patch.status = "returned"
-
   const { data, error } = await supabase
     .from("orders")
-    .update(patch)
+    .update({
+      returns: [...prevReturns, newReturn],
+      notes,
+    })
     .eq("id", id)
     .select()
     .single()
   if (error || !data) err(error?.message ?? "İade talebi oluşturulamadı")
+  return mapOrder(data)
+}
 
-  try {
-    await applyStockMovement(supabase, orderItemsToStockLines(returnLines), "restock")
-  } catch {
-    /* best-effort */
-  }
+/** Admin approves a pending dealer return → restock + mark quantities returned. */
+export async function approveOrderReturn(orderId: string, returnId: string): Promise<Order> {
+  await requireAdminUser()
+  const { data: existing, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .single()
+  if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
 
+  const prevReturns = (Array.isArray(existing.returns) ? existing.returns : []) as Order["returns"]
+  const target = prevReturns.find((r) => r.id === returnId)
+  if (!target) err("İade kaydı bulunamadı")
+  if (target.status === "approved") err("İade zaten onaylanmış")
+  if (target.status === "rejected") err("Reddedilmiş iade onaylanamaz")
+
+  const admin = await getCurrentUser()
+  const nextReturns = prevReturns.map((r) =>
+    r.id === returnId
+      ? {
+          ...r,
+          status: "approved" as const,
+          reviewedAt: new Date().toISOString(),
+          reviewedBy: admin.id,
+        }
+      : r
+  )
+
+  return applyApprovedReturnToOrder(
+    existing as Record<string, unknown>,
+    target.items.map((i) => ({
+      productId: i.productId,
+      productName: i.productName,
+      sku: i.sku ?? "",
+      brand: i.brand ?? "",
+      quantity: i.quantity,
+      warehouseId: i.warehouseId ?? "",
+    })),
+    target.reason,
+    nextReturns
+  )
+}
+
+/** Admin rejects a pending dealer return. */
+export async function rejectOrderReturn(
+  orderId: string,
+  returnId: string,
+  reviewNote?: string
+): Promise<Order> {
+  const admin = await requireAdminUser()
+  const { data: existing, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .single()
+  if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
+
+  const prevReturns = (Array.isArray(existing.returns) ? existing.returns : []) as Order["returns"]
+  const target = prevReturns.find((r) => r.id === returnId)
+  if (!target) err("İade kaydı bulunamadı")
+  if (target.status === "approved") err("Onaylanmış iade reddedilemez")
+  if (target.status === "rejected") return mapOrder(existing)
+
+  const nextReturns = prevReturns.map((r) =>
+    r.id === returnId
+      ? {
+          ...r,
+          status: "rejected" as const,
+          reviewedAt: new Date().toISOString(),
+          reviewedBy: admin.id,
+          reviewNote: reviewNote?.trim() || "Reddedildi",
+        }
+      : r
+  )
+
+  const { data, error } = await supabase
+    .from("orders")
+    .update({ returns: nextReturns })
+    .eq("id", orderId)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "İade reddedilemedi")
   return mapOrder(data)
 }
 
@@ -1389,6 +1607,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
 export async function getMyCreditSnapshot() {
   const user = await getCurrentUser()
+  if (!canViewCredit(user) && !canPlaceOrder(user)) {
+    err("Kredi bilgilerini görüntüleme yetkiniz yok")
+  }
   if (!user.companyId) {
     return {
       creditLimit: 0,
@@ -1421,6 +1642,7 @@ export async function getMyCreditLedger(): Promise<{
   entries: CreditLedgerEntry[]
 }> {
   const user = await getCurrentUser()
+  if (!canViewCredit(user)) err("Kredi defterini görüntüleme yetkiniz yok")
   if (!user.companyId) {
     return {
       snapshot: {
@@ -1565,7 +1787,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Campai
 }
 
 export async function setCampaignActive(id: string, isActive: boolean): Promise<void> {
-  await requireAuth()
+  await requireAdminUser()
   const { error } = await supabase.from("campaigns").update({ is_active: isActive }).eq("id", id)
   if (error) err(error.message)
 }
@@ -1586,8 +1808,12 @@ export async function getNotifications(): Promise<Notification[]> {
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
-  await requireAuth()
-  const { error } = await supabase.from("notifications").update({ is_read: true }).eq("id", id)
+  const user = await getCurrentUser()
+  const { error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("id", id)
+    .eq("user_id", user.id)
   if (error) err(error.message)
 }
 
@@ -2348,8 +2574,9 @@ function withOverdueStatus<T extends Invoice>(inv: T): T {
 
 export async function getInvoices(): Promise<Invoice[]> {
   const user = await getCurrentUser()
+  if (!canViewInvoices(user)) err("Faturaları görüntüleme yetkiniz yok")
   let query = supabase.from("invoices").select("*").order("created_at", { ascending: false })
-  if (user.companyId) query = query.eq("company_id", user.companyId)
+  if (user.role !== "admin" && user.companyId) query = query.eq("company_id", user.companyId)
 
   const { data, error } = await query
   if (error) err(error.message)
@@ -2358,6 +2585,7 @@ export async function getInvoices(): Promise<Invoice[]> {
 
 export async function getInvoiceById(id: string): Promise<Invoice & { companyName?: string }> {
   const user = await getCurrentUser()
+  if (!canViewInvoices(user)) err("Faturaları görüntüleme yetkiniz yok")
   const { data, error } = await supabase
     .from("invoices")
     .select("*, companies(name)")
@@ -2564,6 +2792,11 @@ export interface SiteSettings {
   priceUpdateMessage: string
   /** Sipariş tutarına göre ekstra iskonto kademeleri */
   volumeDiscountTiers: VolumeDiscountTier[]
+  /** Havale / EFT hesap bilgileri */
+  bankName: string
+  bankIban: string
+  bankAccountName: string
+  bankBranch: string
   updatedAt: string | null
 }
 
@@ -2577,6 +2810,10 @@ const defaultSiteSettings: SiteSettings = {
     { threshold: 50_000, bonusPercent: 5 },
     { threshold: 150_000, bonusPercent: 10 },
   ],
+  bankName: "",
+  bankIban: "",
+  bankAccountName: "",
+  bankBranch: "",
   updatedAt: null,
 }
 
@@ -2604,6 +2841,10 @@ function mapSiteSettings(row: Record<string, unknown> | null): SiteSettings {
     priceUpdateDate: row.price_update_date ? String(row.price_update_date).slice(0, 10) : null,
     priceUpdateMessage: String(row.price_update_message ?? ""),
     volumeDiscountTiers: mapVolumeTiers(row.volume_discount_tiers),
+    bankName: String(row.bank_name ?? ""),
+    bankIban: String(row.bank_iban ?? "").replace(/\s+/g, "").toUpperCase(),
+    bankAccountName: String(row.bank_account_name ?? ""),
+    bankBranch: String(row.bank_branch ?? ""),
     updatedAt: row.updated_at ? String(row.updated_at) : null,
   }
 }
@@ -2637,6 +2878,14 @@ export async function updateSiteSettings(input: Partial<SiteSettings>): Promise<
       .filter((t) => t.threshold > 0 && t.bonusPercent > 0)
       .sort((a, b) => a.threshold - b.threshold)
   }
+  if (input.bankName !== undefined) patch.bank_name = String(input.bankName).trim().slice(0, 120)
+  if (input.bankIban !== undefined) {
+    patch.bank_iban = String(input.bankIban).replace(/\s+/g, "").toUpperCase().slice(0, 34)
+  }
+  if (input.bankAccountName !== undefined) {
+    patch.bank_account_name = String(input.bankAccountName).trim().slice(0, 160)
+  }
+  if (input.bankBranch !== undefined) patch.bank_branch = String(input.bankBranch).trim().slice(0, 120)
 
   const { data, error } = await supabase
     .from("site_settings")
@@ -2646,6 +2895,45 @@ export async function updateSiteSettings(input: Partial<SiteSettings>): Promise<
     .single()
   if (error || !data) err(error?.message ?? "Ayarlar kaydedilemedi")
   return mapSiteSettings(data)
+}
+
+/** Client helper: upload havale dekont via authenticated API. */
+export async function uploadHavaleReceipt(orderId: string, file: File): Promise<{
+  receiptFileName: string
+  receiptUploadedAt: string
+  paymentStatus: string
+}> {
+  await requireAuth()
+  const form = new FormData()
+  form.append("orderId", orderId)
+  form.append("file", file)
+  const { data: { session } } = await supabase.auth.getSession()
+  const res = await fetch("/api/payment/havale/receipt", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    body: form,
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) err((json as { error?: string }).error ?? "Dekont yüklenemedi")
+  return {
+    receiptFileName: String((json as { receiptFileName?: string }).receiptFileName ?? file.name),
+    receiptUploadedAt: String((json as { receiptUploadedAt?: string }).receiptUploadedAt ?? ""),
+    paymentStatus: String((json as { paymentStatus?: string }).paymentStatus ?? "receipt_uploaded"),
+  }
+}
+
+/** Signed URL to view dekont. */
+export async function getHavaleReceiptUrl(orderId: string): Promise<string> {
+  await requireAuth()
+  const { data: { session } } = await supabase.auth.getSession()
+  const res = await fetch(`/api/payment/havale/receipt-url?orderId=${encodeURIComponent(orderId)}`, {
+    headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) err((json as { error?: string }).error ?? "Dekont açılamadı")
+  const url = (json as { url?: string }).url
+  if (!url) err("Dekont URL alınamadı")
+  return url
 }
 
 // ─── Home banners (firma ana sayfa) ─────────────────────────────────────────

@@ -1,8 +1,16 @@
-import { getServiceClient } from "@/lib/supabase-admin"
 import { getPaytrConfig, verifyCallbackHash } from "@/lib/paytr"
-import { createInvoiceForOrder } from "@/lib/invoices"
-import { applyStockMovement, orderItemsToStockLines } from "@/lib/inventory"
+import {
+  failOnlineOrder,
+  findOrderByMerchantOid,
+  finalizePaidOnlineOrder,
+  PaymentAmountMismatchError,
+} from "@/lib/payment-finalize"
+import { getServiceClient } from "@/lib/supabase-admin"
 
+/**
+ * PayTR notification URL (server-to-server).
+ * Must always acknowledge with "OK" when hash is valid so PayTR stops retrying.
+ */
 export async function POST(request: Request) {
   const config = getPaytrConfig()
   if (!config) {
@@ -21,65 +29,29 @@ export async function POST(request: Request) {
   }
 
   const service = getServiceClient()
-  const { data: order } = await service
-    .from("orders")
-    .select("*")
-    .eq("payment->>merchantOid", merchantOid)
-    .single()
-
+  const order = await findOrderByMerchantOid(service, merchantOid)
   if (!order) {
+    // Unknown oid — acknowledge so PayTR does not retry forever
     return new Response("OK", { status: 200 })
   }
 
-  const lines = orderItemsToStockLines(
-    (Array.isArray(order.items) ? order.items : []) as Array<{
-      productId: string
-      warehouseId: string
-      quantity: number
-      productName?: string
-    }>
-  )
-
-  if (status === "success") {
-    await service
-      .from("orders")
-      .update({
-        status: "confirmed",
-        payment: { ...(order.payment ?? {}), status: "paid", paidDate: new Date().toISOString() },
+  try {
+    if (status === "success") {
+      await finalizePaidOnlineOrder(service, order, {
+        paidAmountKurus: Number(totalAmount),
       })
-      .eq("id", order.id)
-    try {
-      await applyStockMovement(service, lines, "commit")
-    } catch {
-      /* best-effort */
+    } else {
+      await failOnlineOrder(service, order)
     }
-    try {
-      await createInvoiceForOrder(service, order)
-    } catch {
-      /* best-effort */
+  } catch (e) {
+    if (e instanceof PaymentAmountMismatchError) {
+      // Do not OK amount mismatches — PayTR will retry / ops can investigate
+      console.error("[paytr/callback]", e.message, { orderId: order.id, merchantOid })
+      return new Response("PAYTR notification failed: amount mismatch", { status: 400 })
     }
-    try {
-      await service
-        .from("invoices")
-        .update({ status: "paid", paid_date: new Date().toISOString() })
-        .eq("order_id", order.id)
-        .neq("status", "cancelled")
-    } catch {
-      /* best-effort */
-    }
-  } else {
-    await service
-      .from("orders")
-      .update({
-        status: "cancelled",
-        payment: { ...(order.payment ?? {}), status: "failed" },
-      })
-      .eq("id", order.id)
-    try {
-      await applyStockMovement(service, lines, "release")
-    } catch {
-      /* best-effort */
-    }
+    console.error("[paytr/callback]", e)
+    // Transient errors: non-OK so PayTR retries
+    return new Response("PAYTR notification failed: processing error", { status: 500 })
   }
 
   return new Response("OK", { status: 200 })

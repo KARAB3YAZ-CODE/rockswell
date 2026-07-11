@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useCartStore } from "@/lib/store"
-import { formatPrice } from "@/lib/utils"
+import { formatPrice, formatIban } from "@/lib/utils"
 import {
   computeCartPricingFromLines,
   DEFAULT_DISCOUNT_RATE,
@@ -540,9 +540,24 @@ export default function CartPage() {
                 )}
 
                 {isAuthenticated && paymentMethod === "havale" && (
-                  <p className="text-[11px] text-white/35 px-1">
-                    Havale/EFT kredi limitinizi kullanmaz. Dekont sonrası onaylanır; +%{HAVALE_EXTRA_DISCOUNT_RATE} indirim uygulanır.
-                  </p>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 space-y-2 text-[11px] text-white/50">
+                    <p className="text-white/70 font-medium">Havale / EFT bilgisi</p>
+                    {siteSettings?.bankIban ? (
+                      <>
+                        {siteSettings.bankName && <p>Banka: {siteSettings.bankName}</p>}
+                        {siteSettings.bankAccountName && <p>Hesap: {siteSettings.bankAccountName}</p>}
+                        <p className="font-mono text-white/80 break-all">{formatIban(siteSettings.bankIban)}</p>
+                        <p className="text-white/35">
+                          Sipariş sonrası açıklamaya sipariş numaranızı yazın; dekontu sipariş sayfasından yükleyin.
+                          +%{HAVALE_EXTRA_DISCOUNT_RATE} indirim uygulanır · kredi limiti kullanılmaz.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-warning">
+                        Havale hesabı henüz tanımlı değil. Online veya açık hesap seçin, ya da yöneticiye bildirin.
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {isAuthenticated && paymentMethod === "online" && (
@@ -557,7 +572,12 @@ export default function CartPage() {
                     className="w-full"
                     icon={<CreditCard size={16} />}
                     onClick={handleSubmitOrder}
-                    disabled={submitting || openAccountBlocked || !canOrder}
+                    disabled={
+                      submitting ||
+                      openAccountBlocked ||
+                      !canOrder ||
+                      (paymentMethod === "havale" && !siteSettings?.bankIban)
+                    }
                   >
                     {submitting
                       ? "İşleniyor..."

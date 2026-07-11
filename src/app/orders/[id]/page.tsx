@@ -11,14 +11,14 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
-import { getOrderById, requestOrderReturn, approveMyCompanyOrder, rejectMyCompanyOrder } from "@/lib/api"
-import { formatDate, formatPrice, cn } from "@/lib/utils"
+import { getOrderById, requestOrderReturn, approveMyCompanyOrder, rejectMyCompanyOrder, uploadHavaleReceipt, getHavaleReceiptUrl } from "@/lib/api"
+import { formatDate, formatPrice, formatIban, cn } from "@/lib/utils"
 import { trackingUrl } from "@/lib/shipping"
 import { useAuth } from "@/lib/auth"
 import { canApproveOrder } from "@/lib/permissions"
 import {
   Package, Truck, CheckCircle, Clock, XCircle, FileText,
-  ArrowLeft, CreditCard, MapPin, StickyNote, RotateCcw, Minus, Plus, ExternalLink,
+  ArrowLeft, CreditCard, MapPin, StickyNote, RotateCcw, Minus, Plus, ExternalLink, Copy, Upload,
 } from "lucide-react"
 
 const statusConfig: Record<string, { label: string; color: "default" | "warning" | "info" | "success" | "danger"; icon: typeof Clock }> = {
@@ -42,6 +42,7 @@ const paymentLabels: Record<string, string> = {
 
 const paymentStatusLabels: Record<string, string> = {
   pending: "Bekliyor",
+  receipt_uploaded: "Dekont yüklendi",
   paid: "Ödendi",
   failed: "Başarısız",
 }
@@ -58,6 +59,7 @@ export default function OrderDetailPage() {
   const [showReturn, setShowReturn] = useState(false)
   const [returnQty, setReturnQty] = useState<Record<string, number>>({})
   const [approving, setApproving] = useState(false)
+  const [uploadingReceipt, setUploadingReceipt] = useState(false)
 
   useEffect(() => {
     if (searchParams.get("created") === "1") toast.success("Siparişiniz oluşturuldu")
@@ -66,10 +68,21 @@ export default function OrderDetailPage() {
 
   const returnableItems = useMemo(() => {
     if (!order) return []
+    const pendingByProduct = new Map<string, number>()
+    for (const r of order.returns ?? []) {
+      if (r.status !== "pending") continue
+      for (const line of r.items) {
+        pendingByProduct.set(
+          line.productId,
+          (pendingByProduct.get(line.productId) ?? 0) + Number(line.quantity)
+        )
+      }
+    }
     return order.items
       .map((item) => {
         const returned = Number(item.returnedQuantity ?? 0)
-        const max = Math.max(0, item.quantity - returned)
+        const pending = pendingByProduct.get(item.productId) ?? 0
+        const max = Math.max(0, item.quantity - returned - pending)
         return { ...item, returned, max }
       })
       .filter((i) => i.max > 0)
@@ -110,7 +123,7 @@ export default function OrderDetailPage() {
     setReturning(true)
     try {
       await requestOrderReturn(orderId, returnReason, lines)
-      toast.success("İade kaydı oluşturuldu")
+      toast.success("İade talebi gönderildi — yönetici onayı bekleniyor")
       setShowReturn(false)
       setReturnReason("")
       refetch()
@@ -259,7 +272,7 @@ export default function OrderDetailPage() {
               <GlassCard intensity="light" className="p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-semibold text-white">Kısmi / tam iade</h2>
-                  <p className="text-xs text-white/40 mt-1">İade etmek istediğiniz ürünlerin adedini seçin. Örn. yalnızca Volvo satırını iade edebilirsiniz.</p>
+                  <p className="text-xs text-white/40 mt-1">İade talebi yönetici onayından sonra stoka işlenir.</p>
                 </div>
                 <div className="space-y-2">
                   {returnableItems.map((item) => (
@@ -365,7 +378,25 @@ export default function OrderDetailPage() {
                 </h2>
                 {order.returns.map((r) => (
                   <div key={r.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3 space-y-1">
-                    <p className="text-xs text-white/40">{formatDate(r.createdAt)}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-white/40">{formatDate(r.createdAt)}</p>
+                      <Badge
+                        variant={
+                          r.status === "rejected"
+                            ? "danger"
+                            : r.status === "pending"
+                              ? "warning"
+                              : "success"
+                        }
+                        size="sm"
+                      >
+                        {r.status === "pending"
+                          ? "Onay bekliyor"
+                          : r.status === "rejected"
+                            ? "Reddedildi"
+                            : "Onaylandı"}
+                      </Badge>
+                    </div>
                     <p className="text-sm text-white/70">{r.reason}</p>
                     <p className="text-xs text-white/40">
                       {r.items.map((i) => `${i.productName} × ${i.quantity}`).join(" · ")}
@@ -395,12 +426,136 @@ export default function OrderDetailPage() {
               </GlassCard>
 
               <div className="space-y-4">
-                <GlassCard intensity="light" className="p-5 space-y-2">
+                <GlassCard intensity="light" className="p-5 space-y-3">
                   <h2 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
                     <CreditCard size={14} className="text-accent" /> Ödeme
                   </h2>
                   <Row label="Yöntem" value={paymentLabels[order.payment.method] ?? order.payment.method ?? "—"} />
                   <Row label="Durum" value={paymentStatusLabels[order.payment.status] ?? order.payment.status ?? "—"} />
+
+                  {order.payment.method === "havale" && (
+                    <div className="pt-2 space-y-2 border-t border-white/5">
+                      {order.payment.bankName && <Row label="Banka" value={order.payment.bankName} />}
+                      {order.payment.bankAccountName && (
+                        <Row label="Hesap sahibi" value={order.payment.bankAccountName} />
+                      )}
+                      {order.payment.bankIban && (
+                        <div className="flex justify-between gap-2 items-start text-sm">
+                          <span className="text-white/40 shrink-0">IBAN</span>
+                          <button
+                            type="button"
+                            className="text-right font-mono text-xs text-white hover:text-accent break-all"
+                            onClick={() => {
+                              void navigator.clipboard.writeText(order.payment.bankIban!.replace(/\s+/g, ""))
+                              toast.success("IBAN kopyalandı")
+                            }}
+                          >
+                            {formatIban(order.payment.bankIban)}
+                            <Copy size={11} className="inline ml-1 opacity-50" />
+                          </button>
+                        </div>
+                      )}
+                      {order.payment.referenceCode && (
+                        <div className="flex justify-between gap-2 items-center text-sm">
+                          <span className="text-white/40">Açıklama / referans</span>
+                          <button
+                            type="button"
+                            className="font-mono text-xs text-accent hover:underline inline-flex items-center gap-1"
+                            onClick={() => {
+                              void navigator.clipboard.writeText(order.payment.referenceCode!)
+                              toast.success("Referans kopyalandı")
+                            }}
+                          >
+                            {order.payment.referenceCode}
+                            <Copy size={11} />
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-[10px] text-white/30">
+                        Havale açıklamasına referans kodunu yazın. Dekontu aşağıdan yükleyin.
+                      </p>
+
+                      {order.payment.receiptPath ? (
+                        <div className="flex flex-wrap gap-2 items-center pt-1">
+                          <Badge variant="success" size="sm">
+                            {order.payment.receiptFileName || "Dekont yüklendi"}
+                          </Badge>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={uploadingReceipt}
+                            onClick={async () => {
+                              try {
+                                const url = await getHavaleReceiptUrl(order.id)
+                                window.open(url, "_blank", "noopener,noreferrer")
+                              } catch (e) {
+                                toast.error(e instanceof Error ? e.message : "Açılamadı")
+                              }
+                            }}
+                          >
+                            Görüntüle
+                          </Button>
+                          {!["paid"].includes(order.payment.status) &&
+                            !["cancelled", "returned"].includes(order.status) && (
+                              <label className="text-xs text-accent hover:underline cursor-pointer inline-flex items-center gap-1">
+                                <Upload size={12} />
+                                {uploadingReceipt ? "Yükleniyor…" : "Yeniden yükle"}
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                                  className="hidden"
+                                  disabled={uploadingReceipt}
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0]
+                                    e.target.value = ""
+                                    if (!file) return
+                                    setUploadingReceipt(true)
+                                    try {
+                                      await uploadHavaleReceipt(order.id, file)
+                                      toast.success("Dekont güncellendi")
+                                      refetch()
+                                    } catch (err) {
+                                      toast.error(err instanceof Error ? err.message : "Yüklenemedi")
+                                    } finally {
+                                      setUploadingReceipt(false)
+                                    }
+                                  }}
+                                />
+                              </label>
+                            )}
+                        </div>
+                      ) : (
+                        !["cancelled", "returned"].includes(order.status) &&
+                        order.payment.status !== "paid" && (
+                          <label className="flex items-center justify-center gap-2 w-full h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 hover:bg-white/10 cursor-pointer">
+                            <Upload size={14} />
+                            {uploadingReceipt ? "Yükleniyor…" : "Dekont yükle (PDF/görsel)"}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,application/pdf"
+                              className="hidden"
+                              disabled={uploadingReceipt}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0]
+                                e.target.value = ""
+                                if (!file) return
+                                setUploadingReceipt(true)
+                                try {
+                                  await uploadHavaleReceipt(order.id, file)
+                                  toast.success("Dekont yüklendi")
+                                  refetch()
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : "Yüklenemedi")
+                                } finally {
+                                  setUploadingReceipt(false)
+                                }
+                              }}
+                            />
+                          </label>
+                        )
+                      )}
+                    </div>
+                  )}
                 </GlassCard>
 
                 <GlassCard intensity="light" className="p-5 space-y-2">

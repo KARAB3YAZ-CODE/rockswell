@@ -94,9 +94,9 @@ export async function getCompanyCreditSnapshot(companyId: string): Promise<Compa
   for (const inv of invoices ?? []) {
     const orderId = inv.order_id ? String(inv.order_id) : ""
     const method = orderId ? methodByOrderId.get(orderId) : OPEN_ACCOUNT_METHOD
-    // Legacy invoices (pre-split): if method missing/unknown, count as açık hesap debt
-    const countsAsOpenAccount =
-      !method || method === OPEN_ACCOUNT_METHOD || method === "havale"
+    // Only açık hesap counts toward credit. Havale/online do not. Legacy invoices without
+    // a linked order method default to açık hesap (pre-split data).
+    const countsAsOpenAccount = !method || method === OPEN_ACCOUNT_METHOD
     if (!countsAsOpenAccount) continue
 
     const amount = Number(inv.grand_total ?? 0)

@@ -174,6 +174,11 @@ export interface OrderReturn {
   reason: string
   createdAt: string
   createdBy?: string
+  /** pending = bayi talebi (stok henüz dönmedi); approved = yönetici onayladı */
+  status?: "pending" | "approved" | "rejected"
+  reviewedAt?: string
+  reviewedBy?: string
+  reviewNote?: string
   items: OrderReturnLine[]
 }
 
@@ -206,6 +211,18 @@ export interface PaymentInfo {
   dueDate?: Date
   paidDate?: Date
   transactionId?: string
+  /** PayTR merchant oid */
+  merchantOid?: string
+  /** Havale açıklama / referans kodu */
+  referenceCode?: string
+  bankName?: string
+  bankIban?: string
+  bankAccountName?: string
+  bankBranch?: string
+  /** Storage path in payment-receipts bucket */
+  receiptPath?: string
+  receiptFileName?: string
+  receiptUploadedAt?: string
 }
 
 export interface OrderDocument {
