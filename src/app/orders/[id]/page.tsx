@@ -37,6 +37,7 @@ const statusConfig: Record<string, { label: string; color: "default" | "warning"
 const paymentLabels: Record<string, string> = {
   havale: "Havale / EFT",
   online: "Online Ödeme (Kredi Kartı)",
+  acik_hesap: "Açık Hesap",
 }
 
 const paymentStatusLabels: Record<string, string> = {
@@ -183,7 +184,11 @@ export default function OrderDetailPage() {
               <GlassCard intensity="light" className="p-5 space-y-3">
                 <h2 className="text-sm font-semibold text-white">Firma onayı gerekli</h2>
                 <p className="text-xs text-white/50">
-                  Bu açık hesap siparişi Rockswell’e iletilmeden önce firma yöneticisi onayı ister.
+                  {order.payment.method === "acik_hesap"
+                    ? "Bu açık hesap siparişi Rockswell’e iletilmeden önce firma yöneticisi onayı ister."
+                    : order.payment.method === "havale"
+                      ? "Bu havale/EFT siparişi Rockswell’e iletilmeden önce firma yöneticisi onayı ister."
+                      : "Bu sipariş Rockswell’e iletilmeden önce firma yöneticisi onayı ister."}
                 </p>
                 <div className="flex gap-2">
                   <Button

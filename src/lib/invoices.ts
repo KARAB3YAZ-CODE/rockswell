@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { TAX_RATE } from "./pricing"
+import { OPEN_ACCOUNT_METHOD, openAccountDueDate } from "./credit"
 
 interface OrderRowLike {
   id: string
@@ -12,6 +13,19 @@ interface OrderRowLike {
     discountTotal?: number
     grandTotal?: number
   }
+  payment?: { method?: string } | null
+}
+
+function resolveDueDate(paymentMethod?: string | null): Date {
+  if (paymentMethod === OPEN_ACCOUNT_METHOD) {
+    return openAccountDueDate()
+  }
+  // Havale/EFT: 7 gün içinde dekont beklenir
+  if (paymentMethod === "havale") {
+    return new Date(Date.now() + 7 * 864e5)
+  }
+  // Online / diğer
+  return new Date(Date.now() + 3 * 864e5)
 }
 
 /**
@@ -40,7 +54,8 @@ export async function createInvoiceForOrder(
   }))
 
   const pricing = order.pricing ?? {}
-  const dueDate = new Date(Date.now() + 30 * 864e5)
+  const method = order.payment?.method
+  const dueDate = resolveDueDate(method)
 
   await client.from("invoices").insert({
     invoice_number: `FAT-${order.order_number}`,

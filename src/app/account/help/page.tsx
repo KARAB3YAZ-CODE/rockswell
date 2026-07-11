@@ -12,12 +12,12 @@ const topics = [
   {
     icon: Package,
     title: "Sipariş nasıl verilir?",
-    body: "Ürünleri sepete ekleyin, Havale veya Online ödeme seçin. Havale siparişleri yönetici onayına gider; online ödemede PayTR ile peşin tahsil edilir.",
+    body: "Ürünleri sepete ekleyin; Havale/EFT, Online veya Açık Hesap seçin. Havale krediyi kullanmaz (+indirim). Online peşin PayTR. Açık hesap limitten düşülür, ödemeler ayın 15’ine kadar yapılmalıdır.",
   },
   {
     icon: CreditCard,
     title: "Kredi / açık hesap",
-    body: "Firmanızın kredi limiti admin tarafından tanımlanır. Havale siparişleri limitten düşülür; online ödeme limiti kullanmaz. Limit aşımında havale engellenir.",
+    body: "Açık hesap limiti admin tarafından tanımlanır. Vadesi geçmiş (ayın 15’i) borç varken yeni açık hesap siparişi açılamaz. Havale ve online ödeme limiti kullanmaz.",
   },
   {
     icon: FileText,

@@ -27,7 +27,7 @@ import { useData } from "@/hooks/use-data"
 import {
   ShoppingCart, Trash2, Plus, Minus, Package,
   CreditCard, Truck, Building2, CheckCircle2,
-  FileText, ShoppingBag, AlertCircle, Tag, Lock, Unlock,
+  FileText, ShoppingBag, AlertCircle, Tag, Lock, Unlock, Wallet,
 } from "lucide-react"
 
 export default function CartPage() {
@@ -87,10 +87,15 @@ export default function CartPage() {
     volumeTiers
   )
 
-  const havaleCreditBlocked =
-    paymentMethod === "havale" &&
+  const openAccountLimitBlocked =
+    paymentMethod === "acik_hesap" &&
     !!credit &&
     (credit.creditLimit <= 0 || credit.creditUsed + total > credit.creditLimit + 0.009)
+
+  const openAccountPeriodBlocked =
+    paymentMethod === "acik_hesap" && !!credit?.openAccountBlocked
+
+  const openAccountBlocked = openAccountLimitBlocked || openAccountPeriodBlocked
 
   const checkoutItems = async () => {
     const base = items.map((i) => ({
@@ -124,8 +129,12 @@ export default function CartPage() {
       toast.error("Sipariş oluşturma yetkiniz yok")
       return
     }
-    if (paymentMethod === "havale" && havaleCreditBlocked) {
-      toast.error("Kredi limitiniz bu havale siparişi için yetersiz")
+    if (openAccountPeriodBlocked) {
+      toast.error(credit?.openAccountBlockReason || "Vadesi geçmiş açık hesap borcunuz var")
+      return
+    }
+    if (openAccountLimitBlocked) {
+      toast.error("Açık hesap limitiniz bu sipariş için yetersiz")
       return
     }
 
@@ -143,7 +152,11 @@ export default function CartPage() {
         router.push(`/payment/${order.id}`)
       } else {
         clearCart()
-        toast.success("Siparişiniz onaya gönderildi!")
+        toast.success(
+          paymentMethod === "acik_hesap"
+            ? "Açık hesap siparişiniz onaya gönderildi"
+            : "Havale siparişiniz onaya gönderildi"
+        )
         router.push(`/orders/${order.id}?created=1`)
       }
     } catch (err) {
@@ -374,7 +387,7 @@ export default function CartPage() {
 
               <GlassCard intensity="light" className="p-4 space-y-3">
                 <label className="text-sm font-medium text-white block">Ödeme Yöntemi</label>
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="grid sm:grid-cols-3 gap-3">
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("havale")}
@@ -389,7 +402,7 @@ export default function CartPage() {
                       <span className="text-sm font-medium text-white">Havale / EFT</span>
                       {paymentMethod === "havale" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
                     </div>
-                    <p className="text-xs text-white/40 mt-1">+%{HAVALE_EXTRA_DISCOUNT_RATE} ekstra indirim · yönetici onayı</p>
+                    <p className="text-xs text-white/40 mt-1">+%{HAVALE_EXTRA_DISCOUNT_RATE} ekstra indirim · kredi kullanmaz</p>
                   </button>
                   <button
                     type="button"
@@ -405,7 +418,23 @@ export default function CartPage() {
                       <span className="text-sm font-medium text-white">Online Ödeme</span>
                       {paymentMethod === "online" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
                     </div>
-                    <p className="text-xs text-white/40 mt-1">Kredi kartı ile anında onay (PayTR)</p>
+                    <p className="text-xs text-white/40 mt-1">Kredi kartı · peşin (PayTR)</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("acik_hesap")}
+                    className={`text-left p-3 rounded-xl border transition-all ${
+                      paymentMethod === "acik_hesap"
+                        ? "border-accent/50 bg-accent/5"
+                        : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Wallet size={16} className={paymentMethod === "acik_hesap" ? "text-accent" : "text-white/40"} />
+                      <span className="text-sm font-medium text-white">Açık Hesap</span>
+                      {paymentMethod === "acik_hesap" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
+                    </div>
+                    <p className="text-xs text-white/40 mt-1">Krediden düşer · vade ayın 15’i</p>
                   </button>
                 </div>
               </GlassCard>
@@ -480,30 +509,40 @@ export default function CartPage() {
                   </div>
                 )}
 
-                {isAuthenticated && credit && paymentMethod === "havale" && (
+                {isAuthenticated && credit && paymentMethod === "acik_hesap" && (
                   <div
                     className={`text-xs px-3 py-2.5 rounded-lg space-y-1 ${
-                      havaleCreditBlocked
+                      openAccountBlocked
                         ? "bg-danger/10 text-danger border border-danger/20"
                         : "bg-white/[0.03] text-white/50 border border-white/10"
                     }`}
                   >
                     <div className="flex items-center gap-1.5 font-medium">
-                      <AlertCircle size={12} />
-                      Açık hesap / kredi
+                      <Wallet size={12} />
+                      Açık hesap
                     </div>
                     <p>
                       Limit {formatPrice(credit.creditLimit)} · kullanılan {formatPrice(credit.creditUsed)} · kalan{" "}
                       {formatPrice(credit.creditRemaining)}
                     </p>
-                    {havaleCreditBlocked && (
+                    <p className="text-white/40">Ödemeler her ayın 15’ine kadar yapılmalıdır.</p>
+                    {openAccountPeriodBlocked && (
+                      <p>{credit.openAccountBlockReason}</p>
+                    )}
+                    {openAccountLimitBlocked && !openAccountPeriodBlocked && (
                       <p>
                         {credit.creditLimit <= 0
-                          ? "Açık hesap tanımlı değil — online ödeme seçin."
-                          : `Bu sipariş (${formatPrice(total)}) kalan limiti aşıyor. Online ödeyin veya limit artırımı isteyin.`}
+                          ? "Açık hesap tanımlı değil — havale veya online ödeme seçin."
+                          : `Bu sipariş (${formatPrice(total)}) kalan limiti aşıyor. Havale/online seçin veya limit artırımı isteyin.`}
                       </p>
                     )}
                   </div>
+                )}
+
+                {isAuthenticated && paymentMethod === "havale" && (
+                  <p className="text-[11px] text-white/35 px-1">
+                    Havale/EFT kredi limitinizi kullanmaz. Dekont sonrası onaylanır; +%{HAVALE_EXTRA_DISCOUNT_RATE} indirim uygulanır.
+                  </p>
                 )}
 
                 {isAuthenticated && paymentMethod === "online" && (
@@ -518,18 +557,22 @@ export default function CartPage() {
                     className="w-full"
                     icon={<CreditCard size={16} />}
                     onClick={handleSubmitOrder}
-                    disabled={submitting || havaleCreditBlocked || !canOrder}
+                    disabled={submitting || openAccountBlocked || !canOrder}
                   >
                     {submitting
                       ? "İşleniyor..."
                       : paymentMethod === "online"
                         ? "Ödemeye Geç"
-                        : "Siparişi Onaya Gönder"}
+                        : paymentMethod === "acik_hesap"
+                          ? "Açık Hesap Siparişi Gönder"
+                          : "Havale Siparişi Gönder"}
                   </Button>
                   <p className="text-xs text-center text-white/30">
                     {paymentMethod === "online"
                       ? "Güvenli ödeme sayfasına yönlendirileceksiniz"
-                      : "Siparişiniz yöneticinizin onayına gönderilecektir"}
+                      : paymentMethod === "acik_hesap"
+                        ? "Limitten düşülür · vade ayın 15’i · yönetici onayı"
+                        : "Dekont ile ödeme · yönetici onayı"}
                   </p>
                   <Button
                     size="md"

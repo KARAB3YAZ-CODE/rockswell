@@ -13,7 +13,7 @@ import {
 import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricingFromLines, type VolumeDiscountTier } from "./pricing"
 import { createInvoiceForOrder } from "./invoices"
 import { applyStockMovement, assertStockAvailable, orderItemsToStockLines, syncWarehouseUsedCapacity } from "./inventory"
-import { assertCreditAllowsOrder, getCompanyCreditSnapshot } from "./credit"
+import { assertCreditAllowsOrder, assertOpenAccountPeriodClear, getCompanyCreditSnapshot, OPEN_ACCOUNT_METHOD } from "./credit"
 import { decodeVin, looksLikeVin } from "./vin"
 import { canPlaceOrder } from "./permissions"
 import type {
@@ -687,7 +687,7 @@ export async function getOrderById(id: string): Promise<Order> {
   return mapOrder(data)
 }
 
-export type PaymentMethod = "havale" | "online"
+export type PaymentMethod = "havale" | "online" | "acik_hesap"
 
 export interface CheckoutItem {
   productId: string
@@ -803,9 +803,13 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   )
 
   const isOnline = input.paymentMethod === "online"
-  // Open-account (havale) consumes credit; quotations and online card do not.
-  if (!input.asQuotation && !isOnline && user.companyId) {
+  const isOpenAccount = input.paymentMethod === OPEN_ACCOUNT_METHOD
+  const needsApproval = !input.asQuotation && !isOnline // havale + açık hesap
+
+  // Açık hesap: dönem borcu (ayın 15'i) + kredi limiti. Havale/EFT kredi kullanmaz.
+  if (!input.asQuotation && isOpenAccount && user.companyId) {
     const snap = await getCompanyCreditSnapshot(user.companyId)
+    assertOpenAccountPeriodClear(snap)
     assertCreditAllowsOrder(snap, Number(pricing.grandTotal ?? 0))
   }
 
@@ -817,7 +821,7 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
       : "pending_approval"
 
   let approvalFlow: Order["approvalFlow"] = []
-  if (!input.asQuotation && !isOnline) {
+  if (needsApproval) {
     const dealerStep: Order["approvalFlow"][number] = {
       id: "dealer",
       role: "company_admin",
@@ -1392,6 +1396,10 @@ export async function getMyCreditSnapshot() {
       creditRemaining: 0,
       openInvoicesAmount: 0,
       pendingOrdersAmount: 0,
+      openAccountBlocked: false,
+      openAccountBlockReason: null,
+      unpaidPastDueCount: 0,
+      unpaidPastDueAmount: 0,
     }
   }
   return getCompanyCreditSnapshot(user.companyId)
@@ -1421,6 +1429,10 @@ export async function getMyCreditLedger(): Promise<{
         creditRemaining: 0,
         openInvoicesAmount: 0,
         pendingOrdersAmount: 0,
+        openAccountBlocked: false,
+        openAccountBlockReason: null,
+        unpaidPastDueCount: 0,
+        unpaidPastDueAmount: 0,
       },
       entries: [],
     }
@@ -1473,11 +1485,11 @@ export async function getMyCreditLedger(): Promise<{
 
   for (const row of pending ?? []) {
     const payment = (row.payment ?? {}) as { method?: string; status?: string }
-    if (payment.method === "online" || payment.status === "paid") continue
+    if (payment.method !== OPEN_ACCOUNT_METHOD || payment.status === "paid") continue
     entries.push({
       id: `ord-${row.id}`,
       kind: "order_pending",
-      label: `${row.order_number} (onay bekliyor)`,
+      label: `${row.order_number} (açık hesap · onay bekliyor)`,
       amount: Number((row.pricing as { grandTotal?: number } | null)?.grandTotal ?? 0),
       date: String(row.created_at),
       link: `/orders/${row.id}`,
