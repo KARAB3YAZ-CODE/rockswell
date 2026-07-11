@@ -34,7 +34,7 @@ export default function CartPage() {
   const router = useRouter()
   const { isAuthenticated, user } = useAuth()
   const { items, updateQuantity, removeItem, clearCart, orderNote, setOrderNote, setItemWarehouse } = useCartStore()
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("havale")
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("online")
   const [submitting, setSubmitting] = useState(false)
   const canOrder = canPlaceOrder(user)
 
@@ -390,22 +390,6 @@ export default function CartPage() {
                 <div className="grid sm:grid-cols-3 gap-3">
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod("havale")}
-                    className={`text-left p-3 rounded-xl border transition-all ${
-                      paymentMethod === "havale"
-                        ? "border-accent/50 bg-accent/5"
-                        : "border-white/10 bg-white/[0.02] hover:border-white/20"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Building2 size={16} className={paymentMethod === "havale" ? "text-accent" : "text-white/40"} />
-                      <span className="text-sm font-medium text-white">Havale / EFT</span>
-                      {paymentMethod === "havale" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
-                    </div>
-                    <p className="text-xs text-white/40 mt-1">+%{HAVALE_EXTRA_DISCOUNT_RATE} ekstra indirim · kredi kullanmaz</p>
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setPaymentMethod("online")}
                     className={`text-left p-3 rounded-xl border transition-all ${
                       paymentMethod === "online"
@@ -419,6 +403,22 @@ export default function CartPage() {
                       {paymentMethod === "online" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
                     </div>
                     <p className="text-xs text-white/40 mt-1">Kredi kartı · peşin (PayTR)</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("havale")}
+                    className={`text-left p-3 rounded-xl border transition-all ${
+                      paymentMethod === "havale"
+                        ? "border-accent/50 bg-accent/5"
+                        : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Building2 size={16} className={paymentMethod === "havale" ? "text-accent" : "text-white/40"} />
+                      <span className="text-sm font-medium text-white">Havale / EFT</span>
+                      {paymentMethod === "havale" && <CheckCircle2 size={14} className="text-accent ml-auto" />}
+                    </div>
+                    <p className="text-xs text-white/40 mt-1">+%{HAVALE_EXTRA_DISCOUNT_RATE} ekstra indirim · kredi kullanmaz</p>
                   </button>
                   <button
                     type="button"
