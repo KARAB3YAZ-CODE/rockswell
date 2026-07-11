@@ -884,7 +884,7 @@ export default function CustomerHomePage() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.05 }}
                     >
-                      <Link href={`/orders`} className="flex items-center justify-between p-4 rounded-xl bg-card border border-border hover:bg-white/[0.04] transition-all group">
+                      <Link href={`/orders/${order.id}`} className="flex items-center justify-between p-4 rounded-xl bg-card border border-border hover:bg-white/[0.04] transition-all group">
                         <div className="flex items-center gap-3">
                           <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", st.color, "bg-black/20")}>
                             <Icon size={16} />

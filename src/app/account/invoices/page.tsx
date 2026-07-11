@@ -48,7 +48,7 @@ export default function InvoicesPage() {
               return (
                 <Link
                   key={inv.id}
-                  href={inv.orderId ? `/orders/${inv.orderId}` : "#"}
+                  href={inv.orderId ? `/orders/${inv.orderId}` : "/orders"}
                   className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors"
                 >
                   <div className="flex items-center gap-3">
