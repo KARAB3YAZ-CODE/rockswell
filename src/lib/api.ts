@@ -610,6 +610,19 @@ export async function updateOrderStatus(
   return mapOrder(data)
 }
 
+export async function bulkUpdateOrderStatus(
+  ids: string[],
+  status: Order["status"]
+): Promise<number> {
+  await requireAuth()
+  let n = 0
+  for (const id of ids) {
+    await updateOrderStatus(id, status)
+    n += 1
+  }
+  return n
+}
+
 // ─── Dashboard ──────────────────────────────────────────────────────────────
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -680,6 +693,8 @@ export interface CreateCampaignInput {
   discountRate: number
   startDate: string
   endDate: string
+  categories?: string[]
+  brands?: string[]
 }
 
 export async function createCampaign(input: CreateCampaignInput): Promise<Campaign> {
@@ -693,8 +708,8 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Campai
       discount_rate: input.discountRate,
       conditions: [],
       products: [],
-      brands: [],
-      categories: [],
+      brands: input.brands ?? [],
+      categories: input.categories ?? [],
       start_date: input.startDate,
       end_date: input.endDate,
       is_active: true,
@@ -784,6 +799,7 @@ export interface AdminUserRow {
   role: string
   phone: string
   isActive: boolean
+  companyId: string | null
   companyName: string
 }
 
@@ -791,7 +807,7 @@ export async function getAllUsers(): Promise<AdminUserRow[]> {
   await requireAuth()
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, name, surname, role, phone, is_active, companies(name)")
+    .select("id, name, surname, role, phone, is_active, company_id, companies(name)")
     .order("created_at", { ascending: false })
 
   if (error) err(error.message)
@@ -802,9 +818,21 @@ export async function getAllUsers(): Promise<AdminUserRow[]> {
     role: String(row.role ?? ""),
     phone: String(row.phone ?? ""),
     isActive: Boolean(row.is_active),
+    companyId: row.company_id ? String(row.company_id) : null,
     companyName:
       (row.companies as { name?: string } | null)?.name ?? "—",
   }))
+}
+
+export async function bulkSetUsersActive(ids: string[], isActive: boolean): Promise<number> {
+  await requireAuth()
+  if (ids.length === 0) return 0
+  const { error, count } = await supabase
+    .from("profiles")
+    .update({ is_active: isActive }, { count: "exact" })
+    .in("id", ids)
+  if (error) err(error.message)
+  return count ?? ids.length
 }
 
 export async function getAllCompanies(): Promise<Company[]> {
@@ -998,6 +1026,8 @@ export async function updateCampaign(id: string, input: CreateCampaignInput): Pr
       discount_rate: input.discountRate,
       start_date: input.startDate,
       end_date: input.endDate,
+      brands: input.brands ?? [],
+      categories: input.categories ?? [],
     })
     .eq("id", id)
     .select()

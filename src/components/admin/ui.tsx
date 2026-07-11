@@ -40,11 +40,37 @@ export function Field({ label, children }: { label: string; children: React.Reac
   )
 }
 
-export function AddressFields({ value, onChange }: { value: Address; onChange: (a: Address) => void }) {
+export function AddressFields({
+  value,
+  onChange,
+  cityOptions = [],
+}: {
+  value: Address
+  onChange: (a: Address) => void
+  cityOptions?: string[]
+}) {
   const set = (k: keyof Address, v: string) => onChange({ ...value, [k]: v })
+  const cities = [...new Set(cityOptions.map((c) => c.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "tr")
+  )
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Field label="İl"><input value={value.city} onChange={(e) => set("city", e.target.value)} className={inputCls} /></Field>
+      <Field label="İl">
+        <input
+          value={value.city}
+          onChange={(e) => set("city", e.target.value)}
+          list={cities.length ? "admin-city-options" : undefined}
+          className={inputCls}
+          placeholder="İl seçin veya yazın"
+        />
+        {cities.length > 0 && (
+          <datalist id="admin-city-options">
+            {cities.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        )}
+      </Field>
       <Field label="İlçe"><input value={value.district} onChange={(e) => set("district", e.target.value)} className={inputCls} /></Field>
       <div className="col-span-2"><Field label="Açık Adres"><input value={value.street} onChange={(e) => set("street", e.target.value)} className={inputCls} /></Field></div>
       <Field label="Posta Kodu"><input value={value.zipCode} onChange={(e) => set("zipCode", e.target.value)} className={inputCls} /></Field>
