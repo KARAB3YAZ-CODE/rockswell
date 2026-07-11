@@ -583,6 +583,10 @@ function AdminCompanies() {
               </div>
               <div className="space-y-2 pt-3 border-t border-white/5">
                 <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/40">İskonto</span>
+                  <span className="text-accent font-medium">%{c.discountRate}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
                   <span className="text-white/40">Vergi No</span>
                   <span className="text-white/70 font-mono">{c.taxNumber || "—"}</span>
                 </div>
@@ -638,12 +642,13 @@ function CompanyForm({ company, onClose, onSaved }: { company: Company | null; o
   const [phone, setPhone] = useState(company?.phone ?? "")
   const [email, setEmail] = useState(company?.email ?? "")
   const [address, setAddress] = useState<Address>(company?.address ?? emptyAddress)
+  const [discountRate, setDiscountRate] = useState(String(company?.discountRate ?? 25))
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
     if (!name.trim()) { toast.error("Firma adı gerekli"); return }
     setSaving(true)
-    const input: CompanyInput = { name, taxNumber, taxOffice, phone, email, address }
+    const input: CompanyInput = { name, taxNumber, taxOffice, phone, email, address, discountRate: Number(discountRate) || 25 }
     try {
       if (isEdit && company) { await updateCompany(company.id, input); toast.success("Şirket güncellendi") }
       else { await createCompany(input); toast.success("Şirket oluşturuldu") }
@@ -663,6 +668,9 @@ function CompanyForm({ company, onClose, onSaved }: { company: Company | null; o
         <Field label="Vergi Dairesi"><input value={taxOffice} onChange={(e) => setTaxOffice(e.target.value)} className={inputCls} /></Field>
         <Field label="Telefon"><input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} /></Field>
         <Field label="E-posta"><input value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} /></Field>
+        <Field label="İskonto Oranı (%)">
+          <input type="number" min={0} max={100} step={0.5} value={discountRate} onChange={(e) => setDiscountRate(e.target.value)} className={inputCls} />
+        </Field>
       </div>
       <AddressFields value={address} onChange={setAddress} />
       <Button className="w-full" onClick={submit} disabled={saving}>{saving ? "Kaydediliyor..." : isEdit ? "Kaydet" : "Oluştur"}</Button>

@@ -10,7 +10,7 @@ import {
   mapUser,
   mapWarehouse,
 } from "./mappers"
-import { DEALER_DISCOUNT_RATE, toOrderPricing } from "./pricing"
+import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricing } from "./pricing"
 import { createInvoiceForOrder } from "./invoices"
 import type {
   Product, Order, Company, User, Warehouse,
@@ -97,6 +97,7 @@ export async function getCurrentCompany(): Promise<Company> {
         },
         phone: "",
         email: user.email,
+        discountRate: DEFAULT_DISCOUNT_RATE,
         users: [user],
       }
       return _currentCompany
@@ -106,6 +107,22 @@ export async function getCurrentCompany(): Promise<Company> {
   _currentCompany = await fetchCompany(user.companyId)
   _currentCompany.users = [user]
   return _currentCompany
+}
+
+/** Returns the logged-in user's company discount rate (percentage), always fresh from DB. */
+export async function getCustomerDiscountRate(): Promise<number> {
+  try {
+    const user = await getCurrentUser()
+    if (!user.companyId) return DEFAULT_DISCOUNT_RATE
+    const { data } = await supabase
+      .from("companies")
+      .select("discount_rate")
+      .eq("id", user.companyId)
+      .single()
+    return resolveDiscountRate(data?.discount_rate != null ? Number(data.discount_rate) : DEFAULT_DISCOUNT_RATE)
+  } catch {
+    return DEFAULT_DISCOUNT_RATE
+  }
 }
 
 export async function login(email: string, password: string): Promise<User> {
@@ -411,6 +428,8 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
 
   if (!input.items.length) err("Sepetiniz boş.")
 
+  const discountRate = await getCustomerDiscountRate()
+
   const orderItems: Order["items"] = input.items.map((item) => ({
     productId: item.productId,
     productName: item.productName,
@@ -418,14 +437,14 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     brand: item.brand,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
-    discountRate: DEALER_DISCOUNT_RATE * 100,
+    discountRate,
     totalPrice: item.unitPrice * item.quantity,
     warehouseId: item.warehouseId,
     stockLocation: "",
   }))
 
   const subtotal = orderItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
-  const pricing = toOrderPricing(subtotal)
+  const pricing = toOrderPricing(subtotal, discountRate)
 
   const isOnline = input.paymentMethod === "online"
   const status: Order["status"] = input.asQuotation
@@ -717,6 +736,7 @@ export interface CompanyInput {
   phone: string
   email: string
   address: Address
+  discountRate: number
 }
 
 function companyRow(input: CompanyInput) {
@@ -727,6 +747,7 @@ function companyRow(input: CompanyInput) {
     phone: input.phone,
     email: input.email,
     address: input.address,
+    discount_rate: resolveDiscountRate(input.discountRate),
   }
 }
 

@@ -87,6 +87,7 @@ export function mapCompany(row: Record<string, unknown>, users: User[] = []): Co
     address: parseAddress(row.address),
     phone: String(row.phone ?? ""),
     email: String(row.email ?? ""),
+    discountRate: Number(row.discount_rate ?? 25),
     users,
   }
 }

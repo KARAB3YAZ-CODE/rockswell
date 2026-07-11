@@ -11,9 +11,10 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { useCartStore } from "@/lib/store"
 import { formatPrice } from "@/lib/utils"
-import { computeCartPricing, DEALER_DISCOUNT_RATE, TAX_RATE } from "@/lib/pricing"
-import { createOrder, type PaymentMethod } from "@/lib/api"
+import { computeCartPricing, DEFAULT_DISCOUNT_RATE, TAX_RATE } from "@/lib/pricing"
+import { createOrder, getCustomerDiscountRate, type PaymentMethod } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useData } from "@/hooks/use-data"
 import {
   ShoppingCart, Trash2, Plus, Minus, Package,
   CreditCard, Truck, Building2, CheckCircle2,
@@ -28,8 +29,13 @@ export default function CartPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("havale")
   const [submitting, setSubmitting] = useState(false)
 
+  const { data: fetchedRate } = useData(
+    () => (isAuthenticated ? getCustomerDiscountRate() : Promise.resolve(DEFAULT_DISCOUNT_RATE)),
+    [isAuthenticated]
+  )
+  const discountRate = fetchedRate ?? DEFAULT_DISCOUNT_RATE
   const subtotal = getSubtotal()
-  const { discount, shipping, tax, total } = computeCartPricing(subtotal)
+  const { discount, shipping, tax, total } = computeCartPricing(subtotal, discountRate)
 
   const checkoutItems = () =>
     items.map((i) => ({
@@ -136,7 +142,7 @@ export default function CartPage() {
 
               <div className="flex items-center gap-2 text-xs text-accent bg-accent/5 px-3 py-2 rounded-lg">
                 <AlertCircle size={14} />
-                %{DEALER_DISCOUNT_RATE * 100} Bayi İndirimi uygulanmaktadır
+                %{discountRate} Bayi İndirimi uygulanmaktadır
               </div>
 
               {items.map((item) => (
@@ -257,7 +263,7 @@ export default function CartPage() {
                     <span className="text-white">{formatPrice(subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-white/40">Bayi İndirimi (%{DEALER_DISCOUNT_RATE * 100})</span>
+                    <span className="text-white/40">Bayi İndirimi (%{discountRate})</span>
                     <span className="text-success">-{formatPrice(discount)}</span>
                   </div>
                   <div className="flex justify-between text-sm">

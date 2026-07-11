@@ -1,6 +1,11 @@
 import type { OrderPricing } from "./types"
 
-export const DEALER_DISCOUNT_RATE = 0.25
+/** Varsayılan bayi iskonto oranı (yüzde) */
+export const DEFAULT_DISCOUNT_RATE = 25
+
+/** @deprecated Use DEFAULT_DISCOUNT_RATE / 100 or resolveDiscountRate() */
+export const DEALER_DISCOUNT_RATE = DEFAULT_DISCOUNT_RATE / 100
+
 export const TAX_RATE = 0.2
 export const SHIPPING_COST = 150
 export const FREE_SHIPPING_THRESHOLD = 5000
@@ -11,19 +16,27 @@ export interface CartPricing {
   shipping: number
   tax: number
   total: number
+  discountRate: number
+}
+
+/** Firma veya profil iskonto oranını yüzde olarak normalize eder. */
+export function resolveDiscountRate(rate?: number | null): number {
+  if (rate == null || Number.isNaN(rate)) return DEFAULT_DISCOUNT_RATE
+  return Math.min(100, Math.max(0, rate))
 }
 
 /** Central B2B cart pricing used by both the cart UI and order creation. */
-export function computeCartPricing(subtotal: number): CartPricing {
-  const discount = subtotal * DEALER_DISCOUNT_RATE
+export function computeCartPricing(subtotal: number, discountRatePercent = DEFAULT_DISCOUNT_RATE): CartPricing {
+  const discountRate = resolveDiscountRate(discountRatePercent)
+  const discount = subtotal * (discountRate / 100)
   const shipping = subtotal > FREE_SHIPPING_THRESHOLD || subtotal === 0 ? 0 : SHIPPING_COST
   const tax = (subtotal - discount) * TAX_RATE
   const total = subtotal - discount + shipping + tax
-  return { subtotal, discount, shipping, tax, total }
+  return { subtotal, discount, shipping, tax, total, discountRate }
 }
 
-export function toOrderPricing(subtotal: number): OrderPricing {
-  const p = computeCartPricing(subtotal)
+export function toOrderPricing(subtotal: number, discountRatePercent = DEFAULT_DISCOUNT_RATE): OrderPricing {
+  const p = computeCartPricing(subtotal, discountRatePercent)
   return {
     subtotal: p.subtotal,
     discountTotal: p.discount,
