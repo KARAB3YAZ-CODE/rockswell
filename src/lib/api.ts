@@ -288,6 +288,71 @@ export async function getProducts(): Promise<Product[]> {
   return applyCustomerPrices((data ?? []).map(mapProduct))
 }
 
+/** Admin catalog: active + inactive, no customer price overlay. */
+export async function getAllProductsAdmin(): Promise<Product[]> {
+  await requireAuth()
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .order("name")
+  if (error) err(error.message)
+  return (data ?? []).map(mapProduct)
+}
+
+export async function bulkSetProductActive(ids: string[], isActive: boolean): Promise<number> {
+  await requireAuth()
+  if (!ids.length) return 0
+  const { error, count } = await supabase
+    .from("products")
+    .update({ is_active: isActive }, { count: "exact" })
+    .in("id", ids)
+  if (error) err(error.message)
+  return count ?? ids.length
+}
+
+export async function bulkDeleteProducts(ids: string[]): Promise<number> {
+  await requireAuth()
+  if (!ids.length) return 0
+  const { error, count } = await supabase
+    .from("products")
+    .delete({ count: "exact" })
+    .in("id", ids)
+  if (error) err(error.message)
+  return count ?? ids.length
+}
+
+export async function bulkAdjustProductPrices(ids: string[], percent: number): Promise<number> {
+  await requireAuth()
+  if (!ids.length) return 0
+  if (!Number.isFinite(percent) || percent === 0) err("Geçerli bir yüzde girin")
+  if (Math.abs(percent) > 100) err("Yüzde en fazla ±100 olabilir")
+
+  const { data, error } = await supabase
+    .from("products")
+    .select("id, base_price")
+    .in("id", ids)
+  if (error) err(error.message)
+
+  const factor = 1 + percent / 100
+  let updated = 0
+  const rows = data ?? []
+  const chunkSize = 40
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize)
+    await Promise.all(
+      chunk.map(async (row) => {
+        const next = Math.round(Number(row.base_price) * factor * 100) / 100
+        const { error: upErr } = await supabase
+          .from("products")
+          .update({ base_price: next })
+          .eq("id", row.id)
+        if (!upErr) updated += 1
+      })
+    )
+  }
+  return updated
+}
+
 export async function getProductById(id: string): Promise<Product> {
   await requireAuth()
   const { data, error } = await supabase
