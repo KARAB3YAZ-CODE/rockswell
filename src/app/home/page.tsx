@@ -269,10 +269,10 @@ export default function CustomerHomePage() {
         </div>
 
         {/* Welcome + Quick Stats */}
-        <div className="grid lg:grid-cols-3 gap-4">
-          <GlassCard intensity="medium" className="p-5 lg:col-span-2">
+        <div className="grid lg:grid-cols-3 gap-4 items-start">
+          <GlassCard intensity="medium" className="p-5 lg:col-span-2 !py-4">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 shrink-0 rounded-2xl bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center text-xl font-bold text-black shadow-lg shadow-accent/20">
+              <div className="w-12 h-12 shrink-0 rounded-2xl bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center text-lg font-bold text-black shadow-lg shadow-accent/20">
                 {user ? `${user.name[0]}${user.surname[0]}` : "R"}
               </div>
               <div className="flex-1 min-w-0 space-y-1">
