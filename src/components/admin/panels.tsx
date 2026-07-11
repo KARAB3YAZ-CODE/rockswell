@@ -12,7 +12,7 @@ import { useProducts, useOrders, useData } from "@/hooks/use-data"
 import {
   getAdminStats, getAllUsers, getAllCompanies, getAllCampaigns, getAllWarehouses,
   createCampaign, updateCampaign, deleteCampaign, setCampaignActive,
-  setProductActive, createProduct, updateProduct, deleteProduct,
+  setProductActive, createProduct, updateProduct, deleteProduct, uploadProductImage,
   createCompany, updateCompany, deleteCompany,
   createWarehouse, updateWarehouse, deleteWarehouse,
   updateOrderStatus, deleteOrder,
@@ -29,6 +29,7 @@ import {
   Warehouse as WarehouseIcon, Percent, TrendingUp, Search,
   Eye, Plus, CheckCircle, XCircle, Truck, X,
   KeyRound, Copy, Check, Pencil, Trash2, Ban, UserPlus,
+  ImagePlus, Star, Link2,
 } from "lucide-react"
 import { ROLE_LABELS } from "@/lib/roles"
 import { siteAbsoluteUrl } from "@/lib/admin-host"
@@ -624,12 +625,17 @@ export function AdminProducts() {
                   <tr key={product.id} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-white/[0.03] border border-white/5 flex items-center justify-center">
-                          <Package size={14} className="text-white/30" />
+                        <div className="w-10 h-10 rounded-lg bg-white/[0.03] border border-white/5 flex items-center justify-center overflow-hidden shrink-0">
+                          {product.images[0] ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={product.images[0]} alt="" className="w-full h-full object-contain p-0.5" />
+                          ) : (
+                            <Package size={14} className="text-white/30" />
+                          )}
                         </div>
                         <div className="min-w-0">
                           <span className="text-sm text-white/80 flex items-center gap-2">{product.name}<Warn items={missing} /></span>
-                          <span className="text-xs text-white/30">{product.brand || "Marka yok"} · {product.category || "Kategori yok"}</span>
+                          <span className="text-xs text-white/30">{product.brand || "Marka yok"} · {product.category || "Kategori yok"}{product.images.length ? ` · ${product.images.length} foto` : ""}</span>
                         </div>
                       </div>
                     </td>
@@ -686,6 +692,7 @@ export function missingProduct(p: Product): string[] {
   if (!p.basePrice || p.basePrice <= 0) m.push("fiyat")
   if (!p.brand) m.push("marka")
   if (!p.category) m.push("kategori")
+  if (!p.images?.length) m.push("fotoğraf")
   return m
 }
 
@@ -699,7 +706,52 @@ export function ProductForm({ product, onClose, onSaved }: { product: Product | 
   const [basePrice, setBasePrice] = useState(String(product?.basePrice ?? ""))
   const [stockQuantity, setStockQuantity] = useState(String(product?.stock[0]?.available ?? "0"))
   const [isActive, setIsActive] = useState(product?.isActive ?? true)
+  const [images, setImages] = useState<string[]>(product?.images ?? [])
+  const [imageUrl, setImageUrl] = useState("")
+  const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  const folderKey = product?.id || sku || "new"
+
+  const addUrl = () => {
+    const url = imageUrl.trim()
+    if (!url) return
+    try {
+      // eslint-disable-next-line no-new
+      new URL(url)
+    } catch {
+      toast.error("Geçerli bir görsel URL girin")
+      return
+    }
+    if (images.includes(url)) {
+      toast.error("Bu görsel zaten ekli")
+      return
+    }
+    setImages((prev) => [...prev, url])
+    setImageUrl("")
+  }
+
+  const onUpload = async (files: FileList | null) => {
+    if (!files?.length) return
+    setUploading(true)
+    try {
+      const uploaded: string[] = []
+      for (const file of Array.from(files)) {
+        const url = await uploadProductImage(file, folderKey)
+        uploaded.push(url)
+      }
+      setImages((prev) => [...prev, ...uploaded])
+      toast.success(`${uploaded.length} fotoğraf yüklendi`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Yükleme başarısız")
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const removeImage = (url: string) => setImages((prev) => prev.filter((u) => u !== url))
+  const makePrimary = (url: string) =>
+    setImages((prev) => [url, ...prev.filter((u) => u !== url)])
 
   const submit = async () => {
     if (!name.trim() || !sku.trim()) { toast.error("Ad ve SKU gerekli"); return }
@@ -709,6 +761,7 @@ export function ProductForm({ product, onClose, onSaved }: { product: Product | 
       basePrice: Number(basePrice) || 0,
       stockQuantity: Number(stockQuantity) || 0,
       isActive,
+      images,
     }
     try {
       if (isEdit && product) { await updateProduct(product.id, input); toast.success("Ürün güncellendi") }
@@ -732,8 +785,88 @@ export function ProductForm({ product, onClose, onSaved }: { product: Product | 
         <Field label="Stok Adedi"><input type="number" value={stockQuantity} onChange={(e) => setStockQuantity(e.target.value)} className={inputCls} /></Field>
       </div>
       <Field label="Açıklama"><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className={cn(inputCls, "h-auto py-2 resize-none")} /></Field>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-white/50">Fotoğraflar ({images.length})</p>
+          <label className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-accent/30 bg-accent/10 text-accent cursor-pointer hover:bg-accent/15">
+            <ImagePlus size={13} />
+            {uploading ? "Yükleniyor…" : "Dosya yükle"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
+              className="hidden"
+              disabled={uploading}
+              onChange={(e) => {
+                void onUpload(e.target.files)
+                e.target.value = ""
+              }}
+            />
+          </label>
+        </div>
+
+        {images.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
+            <Package size={28} className="mx-auto text-white/20 mb-2" />
+            <p className="text-xs text-white/40">Henüz fotoğraf yok. Dosya yükleyin veya URL ekleyin.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {images.map((url, i) => (
+              <div key={url} className="relative group aspect-square rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="w-full h-full object-contain p-1.5" />
+                {i === 0 && (
+                  <span className="absolute left-1.5 top-1.5 text-[9px] px-1.5 py-0.5 rounded bg-accent text-black font-medium">
+                    Ana
+                  </span>
+                )}
+                <div className="absolute inset-x-0 bottom-0 p-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/80 to-transparent">
+                  {i !== 0 && (
+                    <button
+                      type="button"
+                      title="Ana fotoğraf yap"
+                      onClick={() => makePrimary(url)}
+                      className="flex-1 h-7 rounded-md bg-white/10 hover:bg-accent/30 text-white flex items-center justify-center"
+                    >
+                      <Star size={12} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    title="Kaldır"
+                    onClick={() => removeImage(url)}
+                    className="flex-1 h-7 rounded-md bg-danger/20 hover:bg-danger/40 text-danger flex items-center justify-center"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Link2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <input
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl() } }}
+              placeholder="veya görsel URL yapıştır…"
+              className={cn(inputCls, "pl-9")}
+            />
+          </div>
+          <Button type="button" variant="secondary" size="sm" onClick={addUrl}>Ekle</Button>
+        </div>
+        <p className="text-[11px] text-white/30">İlk fotoğraf mağazada ana görsel olur. JPG/PNG/WebP, max 5 MB.</p>
+      </div>
+
       <Toggle checked={isActive} onChange={setIsActive} label="Ürün aktif (mağazada görünür)" />
-      <Button className="w-full" onClick={submit} disabled={saving}>{saving ? "Kaydediliyor..." : isEdit ? "Kaydet" : "Oluştur"}</Button>
+      <Button className="w-full" onClick={submit} disabled={saving || uploading}>
+        {saving ? "Kaydediliyor..." : isEdit ? "Kaydet" : "Oluştur"}
+      </Button>
     </Modal>
   )
 }

@@ -805,6 +805,28 @@ export interface ProductInput {
   basePrice: number
   stockQuantity: number
   isActive: boolean
+  images?: string[]
+}
+
+export async function uploadProductImage(file: File, folderKey: string): Promise<string> {
+  await requireAuth()
+  if (!file.type.startsWith("image/")) err("Sadece görsel dosyaları yüklenebilir")
+  if (file.size > 5 * 1024 * 1024) err("Görsel en fazla 5 MB olabilir")
+
+  const safeFolder = folderKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "product"
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg"
+  const path = `${safeFolder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+  const { error } = await supabase.storage.from("product-images").upload(path, file, {
+    upsert: false,
+    contentType: file.type,
+    cacheControl: "3600",
+  })
+  if (error) err(error.message)
+
+  const { data } = supabase.storage.from("product-images").getPublicUrl(path)
+  if (!data?.publicUrl) err("Görsel URL alınamadı")
+  return data.publicUrl
 }
 
 export async function createProduct(input: ProductInput): Promise<Product> {
@@ -830,6 +852,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
       description: input.description,
       base_price: input.basePrice,
       is_active: input.isActive,
+      images: input.images ?? [],
       stock,
     })
     .select()
@@ -857,6 +880,7 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Pr
       description: input.description,
       base_price: input.basePrice,
       is_active: input.isActive,
+      images: input.images ?? [],
       stock,
     })
     .eq("id", id)
