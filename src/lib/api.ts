@@ -45,11 +45,16 @@ async function authedFetch<T = unknown>(path: string, init: RequestInit = {}): P
 }
 
 export async function askAdminAssistant(
-  messages: { role: "user" | "assistant"; content: string }[]
-): Promise<{ reply: string; actions: string[] }> {
+  messages: { role: "user" | "assistant"; content: string }[],
+  pendingAction?: { tool: string; args: Record<string, unknown> } | null
+): Promise<{
+  reply: string
+  actions: string[]
+  pendingAction: { tool: string; args: Record<string, unknown> } | null
+}> {
   return authedFetch("/api/admin/assistant", {
     method: "POST",
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, pendingAction: pendingAction ?? null }),
   })
 }
 

@@ -9,13 +9,14 @@ import { cn } from "@/lib/utils"
 import { Bot, Send, Sparkles, User } from "lucide-react"
 
 type Msg = { role: "user" | "assistant"; content: string }
+type Pending = { tool: string; args: Record<string, unknown> } | null
 
 const SUGGESTIONS = [
   "Kategorileri listele",
-  "Fren kategorisine %15 zam yap (önce önizle)",
-  "Yeni kampanya: %10 indirim, 15 gün sürsün",
+  "Fren kategorisine %15 zam yap",
+  "Yeni kampanya: %10 indirim, 15 gün",
   "Bakım modunu aç",
-  "Fiyat güncelleme bildirimini 20 Temmuz için aç",
+  "Fiyat güncelleme bildirimini 20.07.2026 için aç",
   "İş özeti ver",
 ]
 
@@ -24,11 +25,12 @@ export default function AdminAssistantPage() {
     {
       role: "assistant",
       content:
-        "Merhaba! Ben ROCKSWELL admin asistanıyım. Örneğin “X kategorisine %15 zam yap” veya “15 günlük %10 kampanya oluştur” diyebilirsiniz. Fiyat ve kampanya işlemlerinde önce önizleme gösteririm, onayınızdan sonra uygularım.",
+        "Merhaba! Ücretsiz yerel asistanım — API ücreti yok. “Fren kategorisine %15 zam yap” veya “15 günlük %10 kampanya oluştur” yazabilirsiniz. Fiyat/kampanyada önce önizleme gelir; “onayla” ile uygulanır.",
     },
   ])
   const [input, setInput] = useState("")
   const [busy, setBusy] = useState(false)
+  const [pendingAction, setPendingAction] = useState<Pending>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -44,8 +46,9 @@ export default function AdminAssistantPage() {
     setBusy(true)
     try {
       const history = nextMessages.filter((m, i) => !(i === 0 && m.role === "assistant"))
-      const { reply } = await askAdminAssistant(history)
-      setMessages((prev) => [...prev, { role: "assistant", content: reply }])
+      const res = await askAdminAssistant(history, pendingAction)
+      setPendingAction(res.pendingAction ?? null)
+      setMessages((prev) => [...prev, { role: "assistant", content: res.reply }])
     } catch (e) {
       setMessages((prev) => [
         ...prev,
@@ -65,7 +68,7 @@ export default function AdminAssistantPage() {
         icon={Bot}
         tone="accent"
         title="AI Asistan"
-        subtitle="Doğal dilde fiyat, kampanya ve sistem işlemleri"
+        subtitle="Ücretsiz yerel komut asistanı — fiyat, kampanya, bakım"
       />
 
       <div className="flex flex-wrap gap-2">
@@ -81,6 +84,16 @@ export default function AdminAssistantPage() {
             {s}
           </button>
         ))}
+        {pendingAction && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => send("onayla")}
+            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-accent/40 bg-accent/15 text-accent hover:bg-accent/25 transition-colors disabled:opacity-40"
+          >
+            Onayla
+          </button>
+        )}
       </div>
 
       <GlassCard intensity="light" className="flex-1 min-h-0 p-0 overflow-hidden flex flex-col">
@@ -115,7 +128,7 @@ export default function AdminAssistantPage() {
           {busy && (
             <div className="flex items-center gap-2 text-xs text-white/40 pl-9">
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              Düşünüyor…
+              İşleniyor…
             </div>
           )}
           <div ref={bottomRef} />
@@ -142,7 +155,7 @@ export default function AdminAssistantPage() {
       </GlassCard>
 
       <p className="text-[11px] text-white/30">
-        Fiyat ve kampanya işlemleri önce önizlenir; “onayla” demeden uygulanmaz. OPENAI_API_KEY gerekir.
+        OpenAI yok — tamamen ücretsiz. Bilinen Türkçe komutları anlar; serbest sohbet ChatGPT gibi değildir.
       </p>
     </div>
   )

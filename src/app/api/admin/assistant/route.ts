@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/admin-guard"
-import { runAdminAssistantChat } from "@/lib/admin-assistant"
+import { runAdminAssistantChat, type PendingAction } from "@/lib/admin-assistant"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -11,7 +11,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: guard.error }, { status: guard.status })
   }
 
-  let body: { messages?: { role: "user" | "assistant"; content: string }[] }
+  let body: {
+    messages?: { role: "user" | "assistant"; content: string }[]
+    pendingAction?: PendingAction | null
+  }
   try {
     body = await request.json()
   } catch {
@@ -33,6 +36,7 @@ export async function POST(request: Request) {
       service: guard.service,
       callerId: guard.callerId,
       messages: cleaned,
+      pendingAction: body.pendingAction ?? null,
     })
     return NextResponse.json(result)
   } catch (e) {

@@ -353,146 +353,10 @@ async function getBusinessSummary(service: SupabaseClient): Promise<ToolResult> 
   }
 }
 
-export const ASSISTANT_TOOLS = [
-  {
-    type: "function" as const,
-    function: {
-      name: "list_categories",
-      description: "Aktif ürün kategorilerini ve ürün sayılarını listeler",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "list_brands",
-      description: "En çok ürünü olan markaları listeler",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "search_products",
-      description: "Ürün ara (ad, sku, marka, kategori)",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string" },
-          limit: { type: "number" },
-        },
-        required: ["query"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "adjust_prices",
-      description:
-        "Kategori veya markaya göre fiyatları yüzde olarak artır/azalt. ÖNCE dry_run=true ile önizleme yap, kullanıcı onayladıktan sonra dry_run=false ile uygula.",
-      parameters: {
-        type: "object",
-        properties: {
-          filterType: { type: "string", enum: ["category", "brand"] },
-          filterValue: { type: "string", description: "Kategori veya marka adı (tam eşleşme tercih edilir)" },
-          percent: { type: "number", description: "Pozitif=zam, negatif=indirim. Örn: 15 veya -10" },
-          dryRun: { type: "boolean", description: "true=önizleme, false=uygula. Varsayılan true." },
-        },
-        required: ["filterType", "filterValue", "percent"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "create_campaign",
-      description:
-        "Yeni indirim kampanyası oluştur. ÖNCE dry_run=true ile önizle, onaydan sonra dry_run=false.",
-      parameters: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          description: { type: "string" },
-          discountRate: { type: "number" },
-          durationDays: { type: "number" },
-          categories: { type: "array", items: { type: "string" } },
-          brands: { type: "array", items: { type: "string" } },
-          dryRun: { type: "boolean" },
-        },
-        required: ["name", "discountRate", "durationDays"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "list_campaigns",
-      description: "Mevcut kampanyaları listeler",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "set_campaign_active",
-      description: "Kampanyayı aç/kapat",
-      parameters: {
-        type: "object",
-        properties: {
-          campaignId: { type: "string" },
-          isActive: { type: "boolean" },
-        },
-        required: ["campaignId", "isActive"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "set_maintenance",
-      description: "Mağaza bakım modunu aç/kapat",
-      parameters: {
-        type: "object",
-        properties: {
-          enabled: { type: "boolean" },
-          message: { type: "string" },
-        },
-        required: ["enabled"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "set_price_update_notice",
-      description: "Firma ekranında fiyat güncelleme bildirimi bandını aç/kapat",
-      parameters: {
-        type: "object",
-        properties: {
-          enabled: { type: "boolean" },
-          date: { type: "string", description: "YYYY-MM-DD" },
-          message: { type: "string" },
-        },
-        required: ["enabled"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "get_business_summary",
-      description: "Ürün, firma, sipariş ve ciro özeti",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-]
+export type PendingAction = {
+  tool: string
+  args: Record<string, unknown>
+}
 
 export async function runAssistantTool(
   service: SupabaseClient,
@@ -540,120 +404,377 @@ export async function runAssistantTool(
   }
 }
 
-export const SYSTEM_PROMPT = `Sen ROCKSWELL B2B otomotiv yedek parça platformunun admin asistanısın.
-Türkçe konuş. Kısa, net ve aksiyon odaklı ol.
-
-Yetkilerin:
-- Kategori/marka bazlı fiyat zammı veya indirimi
-- Kampanya oluşturma / aç-kapa
-- Bakım modu ve fiyat güncelleme bildirimi
-- Ürün arama, kategori/marka listesi, özet rapor
-
-Kurallar:
-1. Fiyat değişimi ve kampanya oluşturmada ÖNCE dry_run=true ile önizleme yap.
-2. Önizlemeyi kullanıcıya özetle (kaç ürün, örnek fiyatlar) ve onay iste.
-3. Kullanıcı "onayla", "uygula", "evet" derse dry_run=false ile uygula.
-4. Kategori/marka adını bilmiyorsan önce list_categories / list_brands çağır.
-5. Tehlikeli işlemlerde abartma; yüzde sınırlarını aşma.
-6. Sonuçları Türkçe ve anlaşılır yaz.`
-
-type ChatMessage = {
-  role: "system" | "user" | "assistant" | "tool"
-  content: string | null
-  tool_calls?: Array<{
-    id: string
-    type: "function"
-    function: { name: string; arguments: string }
-  }>
-  tool_call_id?: string
-  name?: string
+function norm(s: string) {
+  return s
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i")
+    .replace(/İ/g, "i")
+    .replace(/ş/g, "s")
+    .replace(/ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/ö/g, "o")
+    .replace(/ç/g, "c")
+    .trim()
 }
+
+function isConfirm(text: string) {
+  return /^(onayla|uygula|evet|tamam|ok|olur|yap)\b/i.test(text.trim())
+}
+
+function isCancel(text: string) {
+  return /^(iptal|vazgec|vazgeç|hayir|hayır|no)\b/i.test(norm(text))
+}
+
+function formatMoney(n: number) {
+  return new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 2 }).format(n)
+}
+
+function formatToolResult(tool: string, result: ToolResult): { reply: string; pending: PendingAction | null } {
+  if (!result.ok) return { reply: `Hata: ${result.error}`, pending: null }
+  const data = result.data as Record<string, unknown>
+
+  if (tool === "list_categories") {
+    const cats = (data.categories as { name: string; productCount: number }[]) ?? []
+    const lines = cats.slice(0, 30).map((c) => `• ${c.name} (${c.productCount})`)
+    return {
+      reply: `Kategoriler (${data.totalCategories}):\n${lines.join("\n")}${cats.length > 30 ? "\n…" : ""}`,
+      pending: null,
+    }
+  }
+
+  if (tool === "list_brands") {
+    const brands = (data.brands as { name: string; productCount: number }[]) ?? []
+    const lines = brands.map((b) => `• ${b.name} (${b.productCount})`)
+    return { reply: `Markalar:\n${lines.join("\n")}`, pending: null }
+  }
+
+  if (tool === "search_products") {
+    const products = (data.products as { sku: string; name: string; basePrice: number; category: string }[]) ?? []
+    if (!products.length) return { reply: "Ürün bulunamadı.", pending: null }
+    const lines = products.map((p) => `• ${p.sku} — ${p.name} (${p.category}) ${formatMoney(p.basePrice)}`)
+    return { reply: `Bulunan ürünler:\n${lines.join("\n")}`, pending: null }
+  }
+
+  if (tool === "adjust_prices") {
+    const samples = (data.samples as { sku: string; name: string; oldPrice: number; newPrice: number }[]) ?? []
+    const sampleLines = samples
+      .map((s) => `• ${s.sku}: ${formatMoney(s.oldPrice)} → ${formatMoney(s.newPrice)}`)
+      .join("\n")
+    if (data.dryRun) {
+      return {
+        reply: `Önizleme: ${data.matchedProducts} ürüne %${data.percent} uygulanacak (${data.filterType}: ${data.filterValue}).\n${sampleLines}\n\nUygulamak için “onayla” yazın. İptal için “iptal”.`,
+        pending: {
+          tool: "adjust_prices",
+          args: {
+            filterType: data.filterType,
+            filterValue: data.filterValue,
+            percent: data.percent,
+            dryRun: false,
+          },
+        },
+      }
+    }
+    return {
+      reply: `Tamam. ${data.updated} ürün güncellendi (%${data.percent}).\n${sampleLines}`,
+      pending: null,
+    }
+  }
+
+  if (tool === "create_campaign") {
+    const preview = (data.preview ?? data.campaign) as Record<string, unknown>
+    if (data.dryRun) {
+      return {
+        reply: `Kampanya önizlemesi:\n• Ad: ${preview.name}\n• İndirim: %${preview.discountRate}\n• Süre: ${preview.durationDays ?? "—"} gün\n• Başlangıç: ${String(preview.startDate).slice(0, 10)}\n• Bitiş: ${String(preview.endDate).slice(0, 10)}\n\nOluşturmak için “onayla” yazın.`,
+        pending: {
+          tool: "create_campaign",
+          args: {
+            name: preview.name,
+            description: preview.description,
+            discountRate: preview.discountRate,
+            durationDays: preview.durationDays,
+            categories: preview.categories,
+            brands: preview.brands,
+            dryRun: false,
+          },
+        },
+      }
+    }
+    return {
+      reply: `Kampanya oluşturuldu: “${preview.name}” (%${preview.discountRate}, ${String(preview.startDate).slice(0, 10)} → ${String(preview.endDate).slice(0, 10)}).`,
+      pending: null,
+    }
+  }
+
+  if (tool === "list_campaigns") {
+    const campaigns = (data.campaigns as { name: string; discountRate: number; isActive: boolean; endDate: string }[]) ?? []
+    if (!campaigns.length) return { reply: "Kampanya yok.", pending: null }
+    const lines = campaigns.map(
+      (c) => `• ${c.name} — %${c.discountRate} — ${c.isActive ? "aktif" : "pasif"} — bitiş ${String(c.endDate).slice(0, 10)}`
+    )
+    return { reply: `Kampanyalar:\n${lines.join("\n")}`, pending: null }
+  }
+
+  if (tool === "set_maintenance") {
+    return {
+      reply: data.maintenanceEnabled
+        ? `Bakım modu açıldı.\nMesaj: ${data.maintenanceMessage}`
+        : "Bakım modu kapatıldı.",
+      pending: null,
+    }
+  }
+
+  if (tool === "set_price_update_notice") {
+    if (!data.priceUpdateEnabled) return { reply: "Fiyat güncelleme bildirimi kapatıldı.", pending: null }
+    return {
+      reply: `Fiyat güncelleme bildirimi açıldı${data.priceUpdateDate ? ` (${data.priceUpdateDate})` : ""}.`,
+      pending: null,
+    }
+  }
+
+  if (tool === "get_business_summary") {
+    return {
+      reply: `Özet:\n• Aktif ürün: ${data.activeProducts}\n• Firma: ${data.companies}\n• Onay bekleyen: ${data.pendingApproval}\n• Tahmini ciro: ${formatMoney(Number(data.paidRevenueApprox ?? 0))}`,
+      pending: null,
+    }
+  }
+
+  return { reply: JSON.stringify(data, null, 2), pending: null }
+}
+
+type ParsedIntent =
+  | { kind: "tool"; tool: string; args: Record<string, unknown> }
+  | { kind: "confirm" }
+  | { kind: "cancel" }
+  | { kind: "help" }
+  | { kind: "unknown" }
+
+function parseIntent(raw: string): ParsedIntent {
+  const text = raw.trim()
+  const n = norm(text)
+
+  if (isConfirm(text)) return { kind: "confirm" }
+  if (isCancel(text)) return { kind: "cancel" }
+
+  if (
+    /yardim|help|ne yapabilir|komut/.test(n) ||
+    n === "?"
+  ) {
+    return { kind: "help" }
+  }
+
+  if (/kategori.*(liste|goster|neler)|^kategorileri?\b/.test(n)) {
+    return { kind: "tool", tool: "list_categories", args: {} }
+  }
+  if (/marka.*(liste|goster|neler)|^markalari?\b/.test(n)) {
+    return { kind: "tool", tool: "list_brands", args: {} }
+  }
+  if (/kampanya.*(liste|goster|neler)|^kampanyalari?\b/.test(n)) {
+    return { kind: "tool", tool: "list_campaigns", args: {} }
+  }
+  if (/(is\s*ozeti|ozet\s*ver|dashboard|rapor\s*ozet|genel\s*durum)/.test(n)) {
+    return { kind: "tool", tool: "get_business_summary", args: {} }
+  }
+
+  const search = text.match(/(?:ürün\s*)?(?:ara|bul)\s*[:\-]?\s*(.+)/i)
+  if (search?.[1]) {
+    return { kind: "tool", tool: "search_products", args: { query: search[1].trim(), limit: 15 } }
+  }
+
+  // Bakım
+  if (/bakim/.test(n) && /(ac|aktif|baslat|et)/.test(n) && !/kapat|kapa|pasif|bitir/.test(n)) {
+    return { kind: "tool", tool: "set_maintenance", args: { enabled: true } }
+  }
+  if (/bakim/.test(n) && /(kapat|kapa|pasif|bitir|iptal)/.test(n)) {
+    return { kind: "tool", tool: "set_maintenance", args: { enabled: false } }
+  }
+
+  // Fiyat güncelleme bildirimi
+  if (/fiyat.*(guncelle|bildirim|duyuru)/.test(n) || /guncelleme\s*bildirim/.test(n)) {
+    if (/(kapat|kapa|pasif|bitir)/.test(n)) {
+      return { kind: "tool", tool: "set_price_update_notice", args: { enabled: false } }
+    }
+    const iso = text.match(/(\d{4}-\d{2}-\d{2})/)
+    const dmy = text.match(/(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?/)
+    let date: string | undefined
+    if (iso) date = iso[1]
+    else if (dmy) {
+      const dd = dmy[1].padStart(2, "0")
+      const mm = dmy[2].padStart(2, "0")
+      let yyyy = dmy[3] ?? String(new Date().getFullYear())
+      if (yyyy.length === 2) yyyy = `20${yyyy}`
+      date = `${yyyy}-${mm}-${dd}`
+    } else {
+      // "20 Temmuz" tarzı
+      const months: Record<string, string> = {
+        ocak: "01", subat: "02", mart: "03", nisan: "04", mayis: "05", haziran: "06",
+        temmuz: "07", agustos: "08", eylul: "09", ekim: "10", kasim: "11", aralik: "12",
+      }
+      const m = n.match(/(\d{1,2})\s+(ocak|subat|mart|nisan|mayis|haziran|temmuz|agustos|eylul|ekim|kasim|aralik)/)
+      if (m) {
+        const y = new Date().getFullYear()
+        date = `${y}-${months[m[2]]}-${m[1].padStart(2, "0")}`
+      }
+    }
+    return {
+      kind: "tool",
+      tool: "set_price_update_notice",
+      args: { enabled: true, ...(date ? { date } : {}) },
+    }
+  }
+
+  // Fiyat zammı / indirim
+  // "Fren kategorisine %15 zam" | "Bosch markasına %10 indirim" | "%15 zam fren"
+  const pricePatterns = [
+    /(.+?)\s+(kategori(?:sine|ye|si)?|marka(?:sina|ya|si)?)\s+%?\s*(-?\d+(?:[.,]\d+)?)\s*%?\s*(zam|indirim|artir|dusur|indir)/i,
+    /%?\s*(-?\d+(?:[.,]\d+)?)\s*%?\s*(zam|indirim)\s+(.+?)\s+(kategori|marka)/i,
+    /(.+?)\s+(?:icin|için)?\s*%?\s*(-?\d+(?:[.,]\d+)?)\s*%?\s*(zam|indirim)/i,
+  ]
+
+  for (const re of pricePatterns) {
+    const m = text.match(re)
+    if (!m) continue
+    let filterValue = ""
+    let filterType: "category" | "brand" = "category"
+    let percent = 0
+    let action = "zam"
+
+    if (re === pricePatterns[0]) {
+      filterValue = m[1].replace(/^(?:yeni\s+)?/i, "").trim()
+      filterType = norm(m[2]).startsWith("marka") ? "brand" : "category"
+      percent = Number(String(m[3]).replace(",", "."))
+      action = norm(m[4])
+    } else if (re === pricePatterns[1]) {
+      percent = Number(String(m[1]).replace(",", "."))
+      action = norm(m[2])
+      filterValue = m[3].trim()
+      filterType = norm(m[4]).startsWith("marka") ? "brand" : "category"
+    } else {
+      filterValue = m[1].replace(/\b(kategori|marka)\b/gi, "").trim()
+      percent = Number(String(m[2]).replace(",", "."))
+      action = norm(m[3])
+      if (/marka/.test(n)) filterType = "brand"
+    }
+
+    if (!filterValue || !Number.isFinite(percent) || percent === 0) continue
+    if (/indirim|dusur|indir/.test(action) && percent > 0) percent = -percent
+    // strip trailing noise words
+    filterValue = filterValue
+      .replace(/\b(kategorisine|kategoriye|kategorisi|markasina|markaya|markasi|icin|için)\b/gi, "")
+      .trim()
+
+    return {
+      kind: "tool",
+      tool: "adjust_prices",
+      args: { filterType, filterValue, percent, dryRun: true },
+    }
+  }
+
+  // Kampanya: "15 günlük %10 kampanya" | "kampanya oluştur %10 15 gün"
+  if (/kampanya/.test(n) && /(olustur|ac|yap|yeni)/.test(n)) {
+    const pct = text.match(/%\s*(-?\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*%\s*(?:indirim)?/i)
+    const days = text.match(/(\d+)\s*g[uü]n/i)
+    const discountRate = pct ? Number(String(pct[1] ?? pct[2]).replace(",", ".")) : NaN
+    const durationDays = days ? Number(days[1]) : NaN
+    if (Number.isFinite(discountRate) && Number.isFinite(durationDays)) {
+      const nameMatch = text.match(/["“](.+?)["”]/) || text.match(/ad[ıi]\s*[:\-]?\s*(.+)$/i)
+      const name = nameMatch?.[1]?.trim() || `%${discountRate} İndirim — ${durationDays} Gün`
+      return {
+        kind: "tool",
+        tool: "create_campaign",
+        args: { name, discountRate: Math.abs(discountRate), durationDays, dryRun: true },
+      }
+    }
+  }
+
+  // Shorter campaign without "oluştur"
+  if (/kampanya/.test(n) && /%?\s*\d+/.test(n) && /\d+\s*g[uü]n/.test(n)) {
+    const pct = text.match(/%\s*(-?\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*%/i)
+    const days = text.match(/(\d+)\s*g[uü]n/i)
+    const discountRate = pct ? Math.abs(Number(String(pct[1] ?? pct[2]).replace(",", "."))) : NaN
+    const durationDays = days ? Number(days[1]) : NaN
+    if (Number.isFinite(discountRate) && Number.isFinite(durationDays)) {
+      return {
+        kind: "tool",
+        tool: "create_campaign",
+        args: {
+          name: `%${discountRate} İndirim — ${durationDays} Gün`,
+          discountRate,
+          durationDays,
+          dryRun: true,
+        },
+      }
+    }
+  }
+
+  return { kind: "unknown" }
+}
+
+const HELP_TEXT = `Ücretsiz yerel asistan — örnek komutlar:
+
+• Kategorileri listele
+• Markaları listele
+• Fren kategorisine %15 zam yap
+• Bosch markasına %10 indirim
+• Yeni kampanya: %10 indirim, 15 gün
+• Bakım modunu aç / kapat
+• Fiyat güncelleme bildirimini 20.07.2026 için aç
+• Ürün ara: balata
+• İş özeti ver
+
+Fiyat ve kampanyada önce önizleme gelir; “onayla” ile uygulanır.`
 
 export async function runAdminAssistantChat(opts: {
   service: SupabaseClient
   callerId: string
   messages: { role: "user" | "assistant"; content: string }[]
-}): Promise<{ reply: string; actions: string[] }> {
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
-    return {
-      reply:
-        "OpenAI API anahtarı tanımlı değil. Vercel/ortam değişkenlerine OPENAI_API_KEY ekleyin, sonra tekrar deneyin.",
-      actions: [],
-    }
+  pendingAction?: PendingAction | null
+}): Promise<{ reply: string; actions: string[]; pendingAction: PendingAction | null }> {
+  const lastUser = [...opts.messages].reverse().find((m) => m.role === "user")
+  if (!lastUser) {
+    return { reply: HELP_TEXT, actions: [], pendingAction: opts.pendingAction ?? null }
   }
 
+  const intent = parseIntent(lastUser.content)
   const actions: string[] = []
-  const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...opts.messages.map((m) => ({ role: m.role, content: m.content }) as ChatMessage),
-  ]
 
-  for (let step = 0; step < 6; step++) {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        messages,
-        tools: ASSISTANT_TOOLS,
-        tool_choice: "auto",
-        temperature: 0.2,
-      }),
-    })
+  if (intent.kind === "help") {
+    return { reply: HELP_TEXT, actions, pendingAction: null }
+  }
 
-    const json = (await res.json()) as {
-      error?: { message?: string }
-      choices?: Array<{
-        message?: ChatMessage
-        finish_reason?: string
-      }>
-    }
+  if (intent.kind === "cancel") {
+    return { reply: "Tamam, bekleyen işlem iptal edildi.", actions, pendingAction: null }
+  }
 
-    if (!res.ok) {
+  if (intent.kind === "confirm") {
+    if (!opts.pendingAction) {
       return {
-        reply: json.error?.message ?? "OpenAI isteği başarısız oldu",
+        reply: "Onaylanacak bekleyen bir işlem yok. Önce bir komut yazın (ör. kategori zammı).",
         actions,
+        pendingAction: null,
       }
     }
+    const result = await runAssistantTool(
+      opts.service,
+      opts.callerId,
+      opts.pendingAction.tool,
+      opts.pendingAction.args
+    )
+    actions.push(opts.pendingAction.tool)
+    const formatted = formatToolResult(opts.pendingAction.tool, result)
+    return { reply: formatted.reply, actions, pendingAction: formatted.pending }
+  }
 
-    const msg = json.choices?.[0]?.message
-    if (!msg) return { reply: "Yanıt alınamadı", actions }
-
-    const toolCalls = msg.tool_calls ?? []
-    if (toolCalls.length === 0) {
-      return { reply: msg.content?.trim() || "Tamam.", actions }
-    }
-
-    messages.push({
-      role: "assistant",
-      content: msg.content,
-      tool_calls: toolCalls,
-    })
-
-    for (const call of toolCalls) {
-      let parsed: unknown = {}
-      try {
-        parsed = JSON.parse(call.function.arguments || "{}")
-      } catch {
-        parsed = {}
-      }
-      const result = await runAssistantTool(opts.service, opts.callerId, call.function.name, parsed)
-      actions.push(call.function.name)
-      messages.push({
-        role: "tool",
-        tool_call_id: call.id,
-        name: call.function.name,
-        content: JSON.stringify(result),
-      })
-    }
+  if (intent.kind === "tool") {
+    const result = await runAssistantTool(opts.service, opts.callerId, intent.tool, intent.args)
+    actions.push(intent.tool)
+    const formatted = formatToolResult(intent.tool, result)
+    return { reply: formatted.reply, actions, pendingAction: formatted.pending }
   }
 
   return {
-    reply: "İşlem tamamlandı ama son özet üretilemedi. Lütfen sonucu panellerden kontrol edin.",
+    reply: `Komutu anlayamadım.\n\n${HELP_TEXT}`,
     actions,
+    pendingAction: opts.pendingAction ?? null,
   }
 }
+
