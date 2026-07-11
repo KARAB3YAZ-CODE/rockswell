@@ -407,14 +407,13 @@ export function AdminProducts() {
                         : "hover:border-accent/20"
                     )}
                   >
-                    <div className="relative w-full aspect-[5/4] bg-gradient-to-b from-white/[0.04] to-transparent border-b border-white/5">
-                      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(57,255,20,0.04),transparent_70%)]" />
+                    <div className="relative w-full aspect-square bg-white/[0.06] border-b border-white/5 overflow-hidden">
                       {thumb ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={thumb}
                           alt={product.name}
-                          className="absolute inset-0 w-full h-full object-contain p-5 mix-blend-normal opacity-95"
+                          className="absolute inset-0 w-full h-full object-cover"
                           loading="lazy"
                           onError={(e) => {
                             e.currentTarget.style.display = "none"
@@ -425,7 +424,7 @@ export function AdminProducts() {
                       ) : null}
                       <div
                         className={cn(
-                          "absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/25",
+                          "absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/25 bg-gradient-to-b from-white/[0.04] to-transparent",
                           thumb ? "hidden" : ""
                         )}
                       >
@@ -532,13 +531,13 @@ export function AdminProducts() {
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-white/[0.06] to-transparent border border-border overflow-hidden shrink-0 flex items-center justify-center">
+                              <div className="w-16 h-16 rounded-xl bg-white/[0.06] border border-border overflow-hidden shrink-0 flex items-center justify-center">
                                 {thumb ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
                                     src={thumb}
                                     alt=""
-                                    className="w-full h-full object-contain p-1.5"
+                                    className="w-full h-full object-cover"
                                     loading="lazy"
                                   />
                                 ) : (
