@@ -230,71 +230,64 @@ export default function CustomerHomePage() {
     <Shell>
       <div className="space-y-8 pb-8">
 
-        {/* Hero Banner */}
-        <div className="relative overflow-hidden rounded-2xl h-[340px] lg:h-[420px] group">
-          <Glow color="rgba(57, 255, 20," size={300} opacity={0.06} blur={80} className="top-1/3 left-1/4" />
+        {/* Hero Banner — fixed frame; any image size is cropped to fit */}
+        <div className="relative w-full max-w-full min-w-0 overflow-hidden rounded-2xl aspect-[21/9] min-h-[200px] max-h-[420px] h-auto sm:min-h-[260px] group">
+          <Glow color="rgba(57, 255, 20," size={300} opacity={0.06} blur={80} className="top-1/3 left-1/4 pointer-events-none" />
           <AnimatePresence mode="wait">
             <motion.div
               key={currentSlide}
-              initial={{ opacity: 0, scale: 1.05 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.5, ease: "easeInOut" }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.45, ease: "easeInOut" }}
               className={cn(
-                "absolute inset-0 bg-gradient-to-br p-8 lg:p-12 flex flex-col justify-center",
+                "absolute inset-0 overflow-hidden bg-gradient-to-br",
                 slides[currentSlide]?.gradient
               )}
-              style={{
-                backgroundColor: "var(--card)",
-                backgroundImage: slides[currentSlide]?.imageUrl
-                  ? `linear-gradient(to right, rgba(10,10,10,0.85), rgba(10,10,10,0.4)), url(${slides[currentSlide].imageUrl})`
-                  : undefined,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }}
+              style={{ backgroundColor: "var(--card)" }}
             >
-              <div className="flex items-center gap-3 mb-4">
-                <Badge variant="premium" className="w-fit">
-                  {slides[currentSlide]?.badge === "Hızlı" ? <Zap size={12} /> : slides[currentSlide]?.badge === "Sipariş" ? <ShoppingBag size={12} /> : <Percent size={12} />}
-                  {slides[currentSlide]?.badge}
-                </Badge>
+              {slides[currentSlide]?.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={slides[currentSlide].imageUrl}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
+                  draggable={false}
+                />
+              ) : null}
+              <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/25" />
+              <div className="relative z-10 h-full flex flex-col justify-center p-5 sm:p-8 lg:p-12 min-w-0">
+                <div className="flex items-center gap-3 mb-3 sm:mb-4">
+                  <Badge variant="premium" className="w-fit">
+                    {slides[currentSlide]?.badge === "Hızlı" ? <Zap size={12} /> : slides[currentSlide]?.badge === "Sipariş" ? <ShoppingBag size={12} /> : <Percent size={12} />}
+                    {slides[currentSlide]?.badge}
+                  </Badge>
+                </div>
+                <h2 className="text-xl sm:text-2xl lg:text-4xl font-bold text-white max-w-xl leading-tight line-clamp-2">
+                  {slides[currentSlide]?.title}
+                </h2>
+                <p className="mt-2 sm:mt-3 text-white/60 max-w-lg text-sm lg:text-base leading-relaxed line-clamp-2">
+                  {slides[currentSlide]?.subtitle}
+                </p>
+                <Link href={slides[currentSlide]?.href || "/products"} className="mt-4 sm:mt-6 w-fit">
+                  <Button size="lg" className="w-fit group/btn">
+                    <span>{slides[currentSlide]?.cta}</span>
+                    <ArrowRight size={16} className="group-hover/btn:translate-x-0.5 transition-transform" />
+                  </Button>
+                </Link>
               </div>
-              <h2 className="text-2xl lg:text-4xl font-bold text-white max-w-xl leading-tight">
-                {slides[currentSlide]?.title}
-              </h2>
-              <p className="mt-3 text-white/60 max-w-lg text-sm lg:text-base leading-relaxed">
-                {slides[currentSlide]?.subtitle}
-              </p>
-              <Link href={slides[currentSlide]?.href || "/products"}>
-                <Button size="lg" className="mt-6 w-fit group/btn">
-                  <span>{slides[currentSlide]?.cta}</span>
-                  <ArrowRight size={16} className="group-hover/btn:translate-x-0.5 transition-transform" />
-                </Button>
-              </Link>
             </motion.div>
           </AnimatePresence>
 
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2.5">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5">
             {slides.map((_, i) => (
               <button
                 key={i}
+                type="button"
                 onClick={() => setCurrentSlide(i)}
                 className={cn(
                   "rounded-full transition-all duration-500",
                   i === currentSlide ? "bg-accent w-8 h-2" : "bg-white/20 hover:bg-white/40 w-2 h-2"
-                )}
-              />
-            ))}
-          </div>
-
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            {slides.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setCurrentSlide(i)}
-                className={cn(
-                  "w-2 h-2 rounded-full transition-all",
-                  i === currentSlide ? "bg-accent scale-125" : "bg-white/20 hover:bg-white/40"
                 )}
               />
             ))}
@@ -378,36 +371,47 @@ export default function CustomerHomePage() {
           </GlassCard>
         </div>
 
-        {/* Admin-managed promo banners */}
+        {/* Admin-managed promo banners — fixed card size; images never stretch the layout */}
         {promoBanners.length > 0 && (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
             {promoBanners.map((b, i) => (
-              <Link key={b.id} href={b.href || "/products"}>
+              <Link
+                key={b.id}
+                href={b.href || "/products"}
+                className="block w-full min-w-0 max-w-full overflow-hidden rounded-2xl"
+              >
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                   className={cn(
-                    "relative overflow-hidden rounded-2xl border border-border p-4 h-full min-h-[112px] bg-gradient-to-br hover:border-accent/30 transition-colors group",
+                    "relative w-full aspect-[16/9] overflow-hidden rounded-2xl border border-border bg-gradient-to-br hover:border-accent/30 transition-colors group",
                     b.gradient
                   )}
-                  style={{
-                    backgroundColor: "var(--card)",
-                    backgroundImage: b.imageUrl
-                      ? `linear-gradient(to right, rgba(10,10,10,0.88), rgba(10,10,10,0.55)), url(${b.imageUrl})`
-                      : undefined,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }}
+                  style={{ backgroundColor: "var(--card)" }}
                 >
-                  {b.badge && (
-                    <Badge variant="premium" size="sm" className="mb-2 w-fit">{b.badge}</Badge>
-                  )}
-                  <p className="text-sm font-bold text-white group-hover:text-accent transition-colors">{b.title}</p>
-                  <p className="text-xs text-white/45 mt-1 line-clamp-2">{b.subtitle}</p>
-                  <span className="inline-flex items-center gap-1 text-[11px] text-accent mt-3">
-                    {b.cta || "İncele"} <ArrowRight size={12} />
-                  </span>
+                  {b.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={b.imageUrl}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
+                      draggable={false}
+                    />
+                  ) : null}
+                  <div className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/60 to-black/35" />
+                  <div className="relative z-10 h-full flex flex-col justify-end p-4 min-w-0">
+                    {b.badge && (
+                      <Badge variant="premium" size="sm" className="mb-2 w-fit">{b.badge}</Badge>
+                    )}
+                    <p className="text-sm font-bold text-white group-hover:text-accent transition-colors line-clamp-1">
+                      {b.title}
+                    </p>
+                    <p className="text-xs text-white/45 mt-1 line-clamp-2">{b.subtitle}</p>
+                    <span className="inline-flex items-center gap-1 text-[11px] text-accent mt-2">
+                      {b.cta || "İncele"} <ArrowRight size={12} />
+                    </span>
+                  </div>
                 </motion.div>
               </Link>
             ))}

@@ -232,7 +232,18 @@ function BannerSection({
               >
                 <div className="flex items-center gap-3">
                   <GripVertical size={16} className="text-white/25 shrink-0" />
-                  <div className={cn("hidden sm:block w-16 h-12 rounded-lg bg-gradient-to-br shrink-0", b.gradient)} style={{ backgroundColor: "var(--card)" }} />
+                  <div
+                    className={cn(
+                      "hidden sm:block relative w-20 h-12 rounded-lg bg-gradient-to-br shrink-0 overflow-hidden",
+                      b.gradient
+                    )}
+                    style={{ backgroundColor: "var(--card)" }}
+                  >
+                    {b.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={b.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+                    ) : null}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium text-white truncate">{b.title || "Başlıksız"}</p>
