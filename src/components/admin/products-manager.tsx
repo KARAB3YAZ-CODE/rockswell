@@ -9,6 +9,7 @@ import { TableSkeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
 import {
   getAllProductsAdmin,
+  getAllWarehouses,
   createProduct,
   updateProduct,
   deleteProduct,
@@ -21,12 +22,13 @@ import {
 import { formatPrice, cn } from "@/lib/utils"
 import type { Product } from "@/lib/types"
 import { siteAbsoluteUrl } from "@/lib/admin-host"
+import { supabase } from "@/lib/supabase"
 import {
   inputCls, Field, Toggle, Warn, IconBtn, Modal, ConfirmDialog, SectionHeader,
 } from "@/components/admin/ui"
 import {
   Package, Plus, Search, Pencil, Trash2, Eye, ImagePlus, Star, Link2,
-  LayoutGrid, List, Ban, CheckCircle, Percent, X, Filter,
+  LayoutGrid, List, Ban, CheckCircle, Percent, X, Filter, Upload,
 } from "lucide-react"
 
 type BrowseMode = "all" | "category" | "brand"
@@ -74,6 +76,9 @@ export function AdminProducts() {
   const [bulkPercent, setBulkPercent] = useState("10")
   const [bulkPriceOpen, setBulkPriceOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [csvText, setCsvText] = useState("")
+  const [importing, setImporting] = useState(false)
 
   const categories = useMemo(() => {
     const map = new Map<string, number>()
@@ -200,9 +205,14 @@ export function AdminProducts() {
         title="Ürün Yönetimi"
         subtitle={`${products.length} ürün · ${filtered.length} görünür · ${selected.size} seçili`}
         action={
-          <Button size="sm" icon={<Plus size={14} />} onClick={() => setForm("new")}>
-            Yeni Ürün
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" icon={<Upload size={14} />} onClick={() => setImportOpen(true)}>
+              CSV İçe Aktar
+            </Button>
+            <Button size="sm" icon={<Plus size={14} />} onClick={() => setForm("new")}>
+              Yeni Ürün
+            </Button>
+          </div>
         }
       />
 
@@ -472,7 +482,7 @@ export function AdminProducts() {
                             {formatPrice(product.basePrice)}
                           </p>
                           <p className="text-[11px] text-white/35 mt-1">
-                            Stok {product.stock[0]?.available ?? 0}
+                            Stok {product.stock.reduce((s, w) => s + (w.available ?? 0), 0)}
                           </p>
                         </div>
                         {missing.length > 0 && <Warn items={missing} />}
@@ -557,7 +567,7 @@ export function AdminProducts() {
                           </td>
                           <td className="p-3 text-sm text-white/40 font-mono">{product.sku}</td>
                           <td className="p-3 text-right text-sm font-medium text-accent">{formatPrice(product.basePrice)}</td>
-                          <td className="p-3 text-right text-sm text-white/60">{product.stock[0]?.available ?? 0}</td>
+                          <td className="p-3 text-right text-sm text-white/60">{product.stock.reduce((s, w) => s + (w.available ?? 0), 0)}</td>
                           <td className="p-3 text-center">
                             <Badge variant={product.isActive ? "success" : "default"} size="sm">
                               {product.isActive ? "Aktif" : "Pasif"}
@@ -679,6 +689,56 @@ export function AdminProducts() {
           </div>
         </Modal>
       )}
+
+      {importOpen && (
+        <Modal title="Katalog CSV İçe Aktar" icon={Upload} size="lg" onClose={() => setImportOpen(false)}>
+          <p className="text-xs text-white/40 mb-2">
+            Format: <code className="text-accent">sku;name;brand;category;oem;price;warehouse_code;qty;description</code>
+          </p>
+          <textarea
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            rows={12}
+            className={cn(inputCls, "font-mono text-xs")}
+            placeholder={"sku;name;brand;category;oem;price;warehouse_code;qty\nRW-001;Örnek Ürün;ROCKSWELL;Filtreler;;100;ANA;50"}
+          />
+          <Button
+            className="w-full mt-3"
+            disabled={importing || !csvText.trim()}
+            onClick={async () => {
+              setImporting(true)
+              try {
+                const { data: { session } } = await supabase.auth.getSession()
+                if (!session?.access_token) throw new Error("Oturum gerekli")
+                const res = await fetch("/api/admin/import/catalog", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session.access_token}`,
+                  },
+                  body: JSON.stringify({ csvText }),
+                })
+                const body = await res.json()
+                if (!res.ok) throw new Error(body.error || "İçe aktarma başarısız")
+                toast.success(
+                  `${body.upserted} ürün içe aktarıldı` +
+                    (body.errors?.length ? ` · ${body.errors.length} hata` : "") +
+                    (body.skipped?.length ? ` · ${body.skipped.length} atlandı` : "")
+                )
+                setImportOpen(false)
+                setCsvText("")
+                refetch()
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "İçe aktarma başarısız")
+              } finally {
+                setImporting(false)
+              }
+            }}
+          >
+            {importing ? "Aktarılıyor…" : "İçe Aktar"}
+          </Button>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -741,7 +801,17 @@ export function ProductForm({
   const [customVehicleBrand, setCustomVehicleBrand] = useState("")
   const [description, setDescription] = useState(product?.description ?? "")
   const [basePrice, setBasePrice] = useState(String(product?.basePrice ?? ""))
-  const [stockQuantity, setStockQuantity] = useState(String(product?.stock[0]?.available ?? "0"))
+  const [stockLines, setStockLines] = useState<{ warehouseId: string; warehouseName: string; quantity: string }[]>(() => {
+    if (product?.stock?.length) {
+      return product.stock.map((s) => ({
+        warehouseId: s.warehouseId,
+        warehouseName: s.warehouseName,
+        quantity: String(s.quantity ?? s.available ?? 0),
+      }))
+    }
+    return [{ warehouseId: "", warehouseName: "", quantity: "0" }]
+  })
+  const { data: warehouses } = useData(() => getAllWarehouses(), [])
   const [isActive, setIsActive] = useState(product?.isActive ?? true)
   const [images, setImages] = useState<string[]>(product?.images ?? [])
   const [imageUrl, setImageUrl] = useState("")
@@ -824,6 +894,16 @@ export function ProductForm({
     if (!name.trim() || !sku.trim()) { toast.error("Ad ve SKU gerekli"); return }
     if (!category.trim()) { toast.error("Kategori seçin veya yazın"); return }
     setSaving(true)
+    const resolvedLines = stockLines
+      .filter((l) => l.warehouseId)
+      .map((l) => ({
+        warehouseId: l.warehouseId,
+        warehouseName:
+          l.warehouseName ||
+          (warehouses ?? []).find((w) => w.id === l.warehouseId)?.name ||
+          l.warehouseId,
+        quantity: Number(l.quantity) || 0,
+      }))
     const input: ProductInput = {
       sku,
       name,
@@ -831,7 +911,8 @@ export function ProductForm({
       category: category.trim(),
       description,
       basePrice: Number(basePrice) || 0,
-      stockQuantity: Number(stockQuantity) || 0,
+      stockQuantity: resolvedLines.reduce((s, l) => s + l.quantity, 0),
+      stockLines: resolvedLines.length ? resolvedLines : undefined,
       isActive,
       images,
       compatibleVehicles: applyVehicleBrands(product?.compatibleVehicles ?? [], vehicleBrands),
@@ -1018,13 +1099,65 @@ export function ProductForm({
 
         <section className="space-y-3">
           <p className="text-[11px] font-medium uppercase tracking-wide text-white/35">Fiyat & stok</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Fiyat (₺)">
-              <input type="number" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} className={inputCls} />
-            </Field>
-            <Field label="Stok Adedi">
-              <input type="number" value={stockQuantity} onChange={(e) => setStockQuantity(e.target.value)} className={inputCls} />
-            </Field>
+          <Field label="Fiyat (₺)">
+            <input type="number" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} className={inputCls} />
+          </Field>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-white/50">Depo stokları</p>
+              <button
+                type="button"
+                className="text-[11px] text-accent hover:underline"
+                onClick={() =>
+                  setStockLines((prev) => [...prev, { warehouseId: "", warehouseName: "", quantity: "0" }])
+                }
+              >
+                + Depo satırı
+              </button>
+            </div>
+            {stockLines.map((line, idx) => (
+              <div key={idx} className="grid grid-cols-[1fr_100px_auto] gap-2">
+                <select
+                  value={line.warehouseId}
+                  onChange={(e) => {
+                    const wh = (warehouses ?? []).find((w) => w.id === e.target.value)
+                    setStockLines((prev) =>
+                      prev.map((l, i) =>
+                        i === idx
+                          ? { warehouseId: e.target.value, warehouseName: wh?.name ?? "", quantity: l.quantity }
+                          : l
+                      )
+                    )
+                  }}
+                  className={cn(inputCls, "cursor-pointer")}
+                >
+                  <option value="" className="bg-card">Depo seçin…</option>
+                  {(warehouses ?? []).map((w) => (
+                    <option key={w.id} value={w.id} className="bg-card">{w.name} ({w.code})</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min={0}
+                  value={line.quantity}
+                  onChange={(e) =>
+                    setStockLines((prev) =>
+                      prev.map((l, i) => (i === idx ? { ...l, quantity: e.target.value } : l))
+                    )
+                  }
+                  className={inputCls}
+                  placeholder="Adet"
+                />
+                <button
+                  type="button"
+                  className="px-2 text-white/30 hover:text-danger"
+                  onClick={() => setStockLines((prev) => prev.filter((_, i) => i !== idx))}
+                  disabled={stockLines.length <= 1}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
           </div>
         </section>
 

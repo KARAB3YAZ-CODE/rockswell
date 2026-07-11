@@ -11,9 +11,11 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/effects/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useData } from "@/hooks/use-data"
-import { getOrderById, requestOrderReturn } from "@/lib/api"
+import { getOrderById, requestOrderReturn, approveMyCompanyOrder, rejectMyCompanyOrder } from "@/lib/api"
 import { formatDate, formatPrice, cn } from "@/lib/utils"
 import { trackingUrl } from "@/lib/shipping"
+import { useAuth } from "@/lib/auth"
+import { canApproveOrder } from "@/lib/permissions"
 import {
   Package, Truck, CheckCircle, Clock, XCircle, FileText,
   ArrowLeft, CreditCard, MapPin, StickyNote, RotateCcw, Minus, Plus, ExternalLink,
@@ -21,8 +23,8 @@ import {
 
 const statusConfig: Record<string, { label: string; color: "default" | "warning" | "info" | "success" | "danger"; icon: typeof Clock }> = {
   draft: { label: "Ödeme Bekliyor", color: "default", icon: Clock },
-  pending_approval: { label: "Onay Bekliyor", color: "warning", icon: Clock },
-  approved: { label: "Onaylandı", color: "info", icon: CheckCircle },
+  pending_approval: { label: "Bayi Onayı Bekliyor", color: "warning", icon: Clock },
+  approved: { label: "Rockswell Onayı Bekliyor", color: "info", icon: CheckCircle },
   quotation: { label: "Teklif", color: "info", icon: FileText },
   confirmed: { label: "Onaylandı", color: "success", icon: CheckCircle },
   processing: { label: "Hazırlanıyor", color: "info", icon: Package },
@@ -47,12 +49,14 @@ export default function OrderDetailPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { user } = useAuth()
   const orderId = String(params.id)
   const { data: order, loading, error, refetch } = useData(() => getOrderById(orderId), [orderId])
   const [returnReason, setReturnReason] = useState("")
   const [returning, setReturning] = useState(false)
   const [showReturn, setShowReturn] = useState(false)
   const [returnQty, setReturnQty] = useState<Record<string, number>>({})
+  const [approving, setApproving] = useState(false)
 
   useEffect(() => {
     if (searchParams.get("created") === "1") toast.success("Siparişiniz oluşturuldu")
@@ -175,6 +179,77 @@ export default function OrderDetailPage() {
               </div>
             </GlassCard>
 
+            {order.status === "pending_approval" && canApproveOrder(user) && (
+              <GlassCard intensity="light" className="p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-white">Firma onayı gerekli</h2>
+                <p className="text-xs text-white/50">
+                  Bu açık hesap siparişi Rockswell’e iletilmeden önce firma yöneticisi onayı ister.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={approving}
+                    icon={<CheckCircle size={14} />}
+                    onClick={async () => {
+                      setApproving(true)
+                      try {
+                        await approveMyCompanyOrder(order.id)
+                        toast.success("Sipariş onaylandı — Rockswell incelemesine gitti")
+                        refetch()
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Onaylanamadı")
+                      } finally {
+                        setApproving(false)
+                      }
+                    }}
+                  >
+                    Onayla
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={approving}
+                    icon={<XCircle size={14} />}
+                    onClick={async () => {
+                      setApproving(true)
+                      try {
+                        await rejectMyCompanyOrder(order.id)
+                        toast.success("Sipariş reddedildi")
+                        refetch()
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Reddedilemedi")
+                      } finally {
+                        setApproving(false)
+                      }
+                    }}
+                  >
+                    Reddet
+                  </Button>
+                </div>
+              </GlassCard>
+            )}
+
+            {(order.approvalFlow?.length ?? 0) > 0 && (
+              <GlassCard intensity="light" className="p-5 space-y-2">
+                <h2 className="text-sm font-semibold text-white mb-2">Onay zinciri</h2>
+                {order.approvalFlow.map((step) => (
+                  <div key={step.id} className="flex items-center justify-between text-xs py-1.5 border-b border-white/5 last:border-0">
+                    <span className="text-white/60">
+                      {step.role === "company_admin" ? "Firma yöneticisi" : "Rockswell"}
+                    </span>
+                    <Badge
+                      size="sm"
+                      variant={
+                        step.status === "approved" ? "success" : step.status === "rejected" ? "danger" : "warning"
+                      }
+                    >
+                      {step.status === "approved" ? "Onaylandı" : step.status === "rejected" ? "Reddedildi" : "Bekliyor"}
+                    </Badge>
+                  </div>
+                ))}
+              </GlassCard>
+            )}
+
             {showReturn && canReturn && (
               <GlassCard intensity="light" className="p-5 space-y-4">
                 <div>
@@ -236,28 +311,45 @@ export default function OrderDetailPage() {
 
             <GlassCard intensity="light" className="p-5">
               <h2 className="text-sm font-semibold text-white mb-3">Ürünler ({order.items.length})</h2>
-              <div className="space-y-2">
-                {order.items.map((item, idx) => {
-                  const returned = Number(item.returnedQuantity ?? 0)
-                  return (
-                    <div key={idx} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
-                      <div className="w-10 h-10 rounded-lg bg-white/[0.03] flex items-center justify-center shrink-0">
-                        <Package size={18} className="text-white/20" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-white truncate">{item.productName}</p>
-                        <p className="text-[10px] text-white/30 font-mono">{item.sku} • {item.brand}</p>
-                        {returned > 0 && (
-                          <Badge variant="warning" size="sm" className="mt-1">İade: {returned}/{item.quantity}</Badge>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs text-white/40">{item.quantity} × {formatPrice(item.unitPrice)}</p>
-                        <p className="text-sm font-semibold text-white">{formatPrice(item.totalPrice)}</p>
-                      </div>
+              <div className="space-y-4">
+                {Object.entries(
+                  order.items.reduce<Record<string, typeof order.items>>((acc, item) => {
+                    const key = item.warehouseId || "_none"
+                    if (!acc[key]) acc[key] = []
+                    acc[key].push(item)
+                    return acc
+                  }, {})
+                ).map(([whId, whItems]) => (
+                  <div key={whId}>
+                    <p className="text-[11px] text-white/40 mb-2 flex items-center gap-1.5">
+                      <Truck size={12} />
+                      Depo: {whItems[0]?.stockLocation || whId.replace("_none", "Belirtilmedi")}
+                    </p>
+                    <div className="space-y-2">
+                      {whItems.map((item, idx) => {
+                        const returned = Number(item.returnedQuantity ?? 0)
+                        return (
+                          <div key={`${item.productId}-${idx}`} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
+                            <div className="w-10 h-10 rounded-lg bg-white/[0.03] flex items-center justify-center shrink-0">
+                              <Package size={18} className="text-white/20" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-white truncate">{item.productName}</p>
+                              <p className="text-[10px] text-white/30 font-mono">{item.sku} • {item.brand}</p>
+                              {returned > 0 && (
+                                <Badge variant="warning" size="sm" className="mt-1">İade: {returned}/{item.quantity}</Badge>
+                              )}
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xs text-white/40">{item.quantity} × {formatPrice(item.unitPrice)}</p>
+                              <p className="text-sm font-semibold text-white">{formatPrice(item.totalPrice)}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                  )
-                })}
+                  </div>
+                ))}
               </div>
             </GlassCard>
 

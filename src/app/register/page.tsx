@@ -55,8 +55,8 @@ export default function RegisterPage() {
         phone: form.phone,
       }
       await register(data)
-      toast.success("Kaydınız başarıyla oluşturuldu")
-      router.push("/login?registered=true")
+      toast.success("Başvurunuz alındı. Firma onayından sonra giriş yapabilirsiniz.")
+      router.push("/login?registered=pending")
     } catch (err: any) {
       toast.error(err.message || "Kayıt başarısız")
     } finally {

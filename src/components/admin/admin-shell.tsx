@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import {
   Activity, Users, Building2, Package, ShoppingBag,
   Warehouse, Percent, FileText, BarChart3, Settings,
-  LogOut, ExternalLink, Bot, LayoutTemplate, MessageSquare,
+  LogOut, ExternalLink, Bot, LayoutTemplate, MessageSquare, Tag,
 } from "lucide-react"
 
 const nav = [
@@ -19,6 +19,7 @@ const nav = [
   { href: "/users", label: "Kullanıcılar", icon: Users },
   { href: "/companies", label: "Şirketler", icon: Building2 },
   { href: "/products", label: "Ürünler", icon: Package },
+  { href: "/prices", label: "Fiyat Listeleri", icon: Tag },
   { href: "/orders", label: "Siparişler", icon: ShoppingBag },
   { href: "/warehouses", label: "Depolar", icon: Warehouse },
   { href: "/campaigns", label: "Kampanyalar", icon: Percent },

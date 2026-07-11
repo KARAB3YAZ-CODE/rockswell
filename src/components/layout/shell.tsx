@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { Sidebar } from "./sidebar"
 import { Header } from "./header"
 import { MouseGlowVariant } from "@/components/effects/mouse-glow"
@@ -10,6 +10,7 @@ import { useUIStore } from "@/lib/store"
 import { useData } from "@/hooks/use-data"
 import { getSiteSettings } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { canAccessPath } from "@/lib/permissions"
 import { Wrench, Tag } from "lucide-react"
 
 function formatTrDate(iso: string | null): string {
@@ -60,7 +61,8 @@ function PriceUpdateBanner({
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { isAuthenticated, isAdmin, loading } = useAuth()
+  const pathname = usePathname()
+  const { isAuthenticated, isAdmin, loading, user } = useAuth()
   const { sidebarOpen } = useUIStore()
   const { data: settings } = useData(
     () => (isAuthenticated ? getSiteSettings() : Promise.resolve(null)),
@@ -72,6 +74,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
       router.replace("/login")
     }
   }, [isAuthenticated, loading, router])
+
+  useEffect(() => {
+    if (loading || !isAuthenticated || !user || isAdmin) return
+    if (!canAccessPath(user, pathname)) {
+      router.replace("/home")
+    }
+  }, [loading, isAuthenticated, user, isAdmin, pathname, router])
 
   if (loading) {
     return (

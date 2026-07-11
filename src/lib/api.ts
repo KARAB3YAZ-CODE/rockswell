@@ -15,6 +15,7 @@ import { createInvoiceForOrder } from "./invoices"
 import { applyStockMovement, assertStockAvailable, orderItemsToStockLines, syncWarehouseUsedCapacity } from "./inventory"
 import { assertCreditAllowsOrder, getCompanyCreditSnapshot } from "./credit"
 import { decodeVin, looksLikeVin } from "./vin"
+import { canPlaceOrder } from "./permissions"
 import type {
   Product, Order, Company, User, Warehouse,
   Campaign, Notification, DashboardStats, Address, Invoice,
@@ -141,6 +142,7 @@ export async function getCurrentCompany(): Promise<Company> {
         email: user.email,
         discountRate: DEFAULT_DISCOUNT_RATE,
         creditLimit: 0,
+        isActive: true,
         users: [user],
       }
       return _currentCompany
@@ -168,11 +170,31 @@ export async function getCustomerDiscountRate(): Promise<number> {
   }
 }
 
+async function assertAccountAllowed(user: User): Promise<Company | null> {
+  if (!user.isActive) {
+    await supabase.auth.signOut()
+    err("Hesabınız pasife alınmış. Destek ile iletişime geçin.")
+  }
+  if (!user.companyId) {
+    if (user.role === "admin") return null
+    await supabase.auth.signOut()
+    err("Şirket bilgisi bulunamadı.")
+  }
+  const company = await fetchCompany(user.companyId)
+  if (!company.isActive && user.role !== "admin") {
+    await supabase.auth.signOut()
+    err("Firma başvurunuz henüz onaylanmadı. Onay sonrası giriş yapabilirsiniz.")
+  }
+  return company
+}
+
 export async function login(email: string, password: string): Promise<User> {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) err("E-posta veya şifre hatalı")
 
   const user = await fetchProfile(data.user.id, data.user.email ?? "")
+  const company = await assertAccountAllowed(user)
+
   await supabase
     .from("profiles")
     .update({ last_login: new Date().toISOString() })
@@ -181,8 +203,8 @@ export async function login(email: string, password: string): Promise<User> {
   user.lastLogin = new Date()
   _currentUser = user
 
-  if (user.companyId) {
-    _currentCompany = await fetchCompany(user.companyId)
+  if (company) {
+    _currentCompany = company
     _currentCompany.users = [user]
   }
 
@@ -219,10 +241,22 @@ export async function initSessionFromSupabase(): Promise<{ user: User; company: 
   if (!session?.user) return null
 
   const user = await fetchProfile(session.user.id, session.user.email ?? "")
-  _currentUser = user
-  _currentCompany = null
-  const company = await getCurrentCompany()
-  return { user, company }
+  try {
+    const allowedCompany = await assertAccountAllowed(user)
+    _currentUser = user
+    _currentCompany = null
+    if (allowedCompany) {
+      _currentCompany = allowedCompany
+      _currentCompany.users = [user]
+      return { user, company: allowedCompany }
+    }
+    const company = await getCurrentCompany()
+    return { user, company }
+  } catch {
+    _currentUser = null
+    _currentCompany = null
+    return null
+  }
 }
 
 export async function logout(): Promise<void> {
@@ -374,19 +408,24 @@ export async function updateSupportTicketStatus(
 // ─── Products ───────────────────────────────────────────────────────────────
 
 /**
- * Applies customer-specific pricing from the customer_prices table.
- * Overrides basePrice with net/dealer/campaign price when a row exists
- * for the current user. Admins and users without custom prices are unaffected.
+ * Applies company contract prices from customer_prices.
+ * Overrides basePrice with net/dealer/campaign/contract price when a row exists.
  */
 async function applyCustomerPrices(products: Product[]): Promise<Product[]> {
-  const session = await supabase.auth.getSession()
-  const userId = session.data.session?.user?.id
-  if (!userId || products.length === 0) return products
+  if (products.length === 0) return products
+  let companyId: string | undefined
+  try {
+    const user = await getCurrentUser()
+    companyId = user.companyId || undefined
+  } catch {
+    return products
+  }
+  if (!companyId) return products
 
   const { data } = await supabase
     .from("customer_prices")
-    .select("product_id, net_price, dealer_price, campaign_price")
-    .eq("customer_id", userId)
+    .select("product_id, net_price, dealer_price, campaign_price, contract_price")
+    .eq("company_id", companyId)
 
   if (!data?.length) return products
 
@@ -394,7 +433,7 @@ async function applyCustomerPrices(products: Product[]): Promise<Product[]> {
   return products.map((p) => {
     const cp = map.get(p.id)
     if (!cp) return p
-    const price = cp.net_price ?? cp.campaign_price ?? cp.dealer_price
+    const price = cp.net_price ?? cp.contract_price ?? cp.campaign_price ?? cp.dealer_price
     return price != null
       ? { ...p, basePrice: Number(price), customerPriceApplied: true }
       : p
@@ -682,6 +721,9 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   const user = await getCurrentUser()
   const company = await getCurrentCompany()
   if (!user.companyId) err("Sipariş oluşturmak için bir şirkete bağlı olmalısınız.")
+  if (!canPlaceOrder(user) && !input.asQuotation) {
+    err("Sipariş oluşturma yetkiniz yok")
+  }
 
   if (!input.items.length) err("Sepetiniz boş.")
 
@@ -692,11 +734,13 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
       .from("products")
       .select("id, category, brand, compatible_vehicles, stock, name")
       .in("id", productIds),
-    supabase
-      .from("customer_prices")
-      .select("product_id")
-      .eq("customer_id", user.id)
-      .in("product_id", productIds),
+    user.companyId
+      ? supabase
+          .from("customer_prices")
+          .select("product_id")
+          .eq("company_id", user.companyId)
+          .in("product_id", productIds)
+      : Promise.resolve({ data: [] as { product_id: string }[] }),
     getCampaigns().catch(() => [] as Campaign[]),
   ])
 
@@ -758,11 +802,36 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     assertCreditAllowsOrder(snap, Number(pricing.grandTotal ?? 0))
   }
 
-  const status: Order["status"] = input.asQuotation
+  const nowIso = new Date().toISOString()
+  let status: Order["status"] = input.asQuotation
     ? "quotation"
     : isOnline
       ? "draft"
       : "pending_approval"
+
+  let approvalFlow: Order["approvalFlow"] = []
+  if (!input.asQuotation && !isOnline) {
+    const dealerStep: Order["approvalFlow"][number] = {
+      id: "dealer",
+      role: "company_admin",
+      status: "pending",
+      createdAt: new Date(nowIso),
+    }
+    const adminStep: Order["approvalFlow"][number] = {
+      id: "rockswell",
+      role: "admin",
+      status: "pending",
+      createdAt: new Date(nowIso),
+    }
+    if (user.role === "company_admin") {
+      dealerStep.status = "approved"
+      dealerStep.userId = user.id
+      dealerStep.updatedAt = new Date(nowIso)
+      dealerStep.comment = "Siparişi açan firma yöneticisi — otomatik onay"
+      status = "approved"
+    }
+    approvalFlow = [dealerStep, adminStep]
+  }
 
   const payment = {
     method: input.paymentMethod,
@@ -788,7 +857,11 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
       shipping,
       payment,
       notes: input.notes ?? "",
-      approval_flow: [],
+      approval_flow: approvalFlow.map((s) => ({
+        ...s,
+        createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
+        updatedAt: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : s.updatedAt,
+      })),
     })
     .select()
     .single()
@@ -820,6 +893,135 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   return mapped
 }
 
+function normalizeApprovalFlow(raw: unknown): Order["approvalFlow"] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((s) => {
+    const step = s as Record<string, unknown>
+    return {
+      id: String(step.id ?? ""),
+      role: step.role as Order["approvalFlow"][number]["role"],
+      userId: step.userId ? String(step.userId) : undefined,
+      status: (step.status as "pending" | "approved" | "rejected") ?? "pending",
+      comment: step.comment ? String(step.comment) : undefined,
+      createdAt: new Date(String(step.createdAt ?? Date.now())),
+      updatedAt: step.updatedAt ? new Date(String(step.updatedAt)) : undefined,
+    }
+  })
+}
+
+/** Company admin approves a pending open-account order → status approved (Rockswell next). */
+export async function approveMyCompanyOrder(orderId: string, comment?: string): Promise<Order> {
+  const user = await getCurrentUser()
+  if (user.role !== "company_admin" && user.role !== "admin") {
+    err("Bu siparişi onaylama yetkiniz yok")
+  }
+  const { data: existing, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .single()
+  if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
+  if (user.role !== "admin" && String(existing.company_id) !== user.companyId) {
+    err("Bu sipariş firmanıza ait değil")
+  }
+  if (String(existing.status) !== "pending_approval") {
+    err("Sipariş bayi onayı beklemiyor")
+  }
+
+  const now = new Date()
+  const flow = normalizeApprovalFlow(existing.approval_flow).map((step) =>
+    step.role === "company_admin"
+      ? {
+          ...step,
+          status: "approved" as const,
+          userId: user.id,
+          comment: comment || step.comment,
+          updatedAt: now,
+        }
+      : step
+  )
+
+  const { data, error } = await supabase
+    .from("orders")
+    .update({
+      status: "approved",
+      approval_flow: flow.map((s) => ({
+        ...s,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt?.toISOString(),
+      })),
+    })
+    .eq("id", orderId)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Onaylanamadı")
+  return mapOrder(data)
+}
+
+export async function rejectMyCompanyOrder(orderId: string, comment?: string): Promise<Order> {
+  const user = await getCurrentUser()
+  if (user.role !== "company_admin" && user.role !== "admin") {
+    err("Bu siparişi reddetme yetkiniz yok")
+  }
+  const { data: existing, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .single()
+  if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
+  if (user.role !== "admin" && String(existing.company_id) !== user.companyId) {
+    err("Bu sipariş firmanıza ait değil")
+  }
+  if (String(existing.status) !== "pending_approval") {
+    err("Sipariş bayi onayı beklemiyor")
+  }
+
+  const now = new Date()
+  const flow = normalizeApprovalFlow(existing.approval_flow).map((step) =>
+    step.role === "company_admin"
+      ? {
+          ...step,
+          status: "rejected" as const,
+          userId: user.id,
+          comment: comment || "Reddedildi",
+          updatedAt: now,
+        }
+      : step
+  )
+
+  const lines = orderItemsToStockLines(
+    (Array.isArray(existing.items) ? existing.items : []) as Array<{
+      productId: string
+      warehouseId: string
+      quantity: number
+      productName?: string
+    }>
+  )
+
+  const { data, error } = await supabase
+    .from("orders")
+    .update({
+      status: "cancelled",
+      approval_flow: flow.map((s) => ({
+        ...s,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt?.toISOString(),
+      })),
+    })
+    .eq("id", orderId)
+    .select()
+    .single()
+  if (error || !data) err(error?.message ?? "Reddedilemedi")
+
+  try {
+    await applyStockMovement(supabase, lines, "release")
+  } catch {
+    /* best-effort */
+  }
+
+  return mapOrder(data)
+}
+
 export async function updateOrderStatus(
   id: string,
   status: Order["status"]
@@ -833,9 +1035,36 @@ export async function updateOrderStatus(
   if (fetchErr || !existing) err(fetchErr?.message ?? "Sipariş bulunamadı")
 
   const prev = String(existing.status)
+  const flow = normalizeApprovalFlow(existing.approval_flow)
+  const dealerPending = flow.some((s) => s.role === "company_admin" && s.status === "pending")
+  if (
+    dealerPending &&
+    prev === "pending_approval" &&
+    ["confirmed", "processing", "shipped", "delivered", "approved"].includes(status)
+  ) {
+    err("Önce bayi (firma yöneticisi) onayı gerekli")
+  }
+
+  const now = new Date()
+  let nextFlow = flow
+  if (["confirmed", "processing"].includes(status) && ["approved", "pending_approval", "quotation"].includes(prev)) {
+    nextFlow = flow.map((step) =>
+      step.role === "admin"
+        ? { ...step, status: "approved" as const, updatedAt: now }
+        : step
+    )
+  }
+
   const { data, error } = await supabase
     .from("orders")
-    .update({ status })
+    .update({
+      status,
+      approval_flow: nextFlow.map((s) => ({
+        ...s,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt?.toISOString(),
+      })),
+    })
     .eq("id", id)
     .select()
     .single()
@@ -1514,6 +1743,7 @@ export interface CompanyInput {
   address: Address
   discountRate: number
   creditLimit: number
+  isActive?: boolean
 }
 
 function companyRow(input: CompanyInput) {
@@ -1526,14 +1756,25 @@ function companyRow(input: CompanyInput) {
     address: input.address,
     discount_rate: resolveDiscountRate(input.discountRate),
     credit_limit: Math.max(0, Number(input.creditLimit) || 0),
+    ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
   }
 }
 
 export async function createCompany(input: CompanyInput): Promise<Company> {
   await requireAdminUser()
-  const { data, error } = await supabase.from("companies").insert(companyRow(input)).select().single()
+  const { data, error } = await supabase
+    .from("companies")
+    .insert({ ...companyRow(input), is_active: input.isActive !== false })
+    .select()
+    .single()
   if (error || !data) err(error?.message ?? "Şirket oluşturulamadı")
   return mapCompany(data)
+}
+
+export async function setCompanyActive(id: string, isActive: boolean): Promise<void> {
+  await requireAdminUser()
+  const { error } = await supabase.from("companies").update({ is_active: isActive }).eq("id", id)
+  if (error) err(error.message)
 }
 
 export async function updateCompany(id: string, input: CompanyInput): Promise<Company> {
@@ -1564,7 +1805,157 @@ export async function deleteCompany(id: string): Promise<void> {
   if (error) err(error.message)
 }
 
+// ─── Company contract prices ─────────────────────────────────────────────────
+
+export interface CompanyPriceRow {
+  id: string
+  companyId: string
+  productId: string
+  sku: string
+  productName: string
+  listPrice: number
+  dealerPrice: number
+  contractPrice: number | null
+  netPrice: number | null
+  discountRate: number
+  discountGroup: string | null
+  validFrom: string | null
+  validUntil: string | null
+}
+
+export interface CompanyPriceInput {
+  companyId: string
+  productId: string
+  listPrice?: number
+  dealerPrice: number
+  contractPrice?: number | null
+  netPrice?: number | null
+  discountRate?: number
+  discountGroup?: string | null
+  validFrom?: string | null
+  validUntil?: string | null
+}
+
+export async function listCompanyPrices(companyId: string): Promise<CompanyPriceRow[]> {
+  await requireAdminUser()
+  const { data, error } = await supabase
+    .from("customer_prices")
+    .select("id, company_id, product_id, list_price, dealer_price, contract_price, net_price, discount_rate, discount_group, valid_from, valid_until, products(sku, name)")
+    .eq("company_id", companyId)
+    .order("updated_at", { ascending: false })
+
+  if (error) err(error.message)
+  return (data ?? []).map((row) => {
+    const product = row.products as { sku?: string; name?: string } | null
+    return {
+      id: String(row.id),
+      companyId: String(row.company_id),
+      productId: String(row.product_id),
+      sku: String(product?.sku ?? ""),
+      productName: String(product?.name ?? ""),
+      listPrice: Number(row.list_price ?? 0),
+      dealerPrice: Number(row.dealer_price ?? 0),
+      contractPrice: row.contract_price != null ? Number(row.contract_price) : null,
+      netPrice: row.net_price != null ? Number(row.net_price) : null,
+      discountRate: Number(row.discount_rate ?? 0),
+      discountGroup: row.discount_group != null ? String(row.discount_group) : null,
+      validFrom: row.valid_from ? String(row.valid_from) : null,
+      validUntil: row.valid_until ? String(row.valid_until) : null,
+    }
+  })
+}
+
+export async function upsertCompanyPrice(input: CompanyPriceInput): Promise<void> {
+  await requireAdminUser()
+  const dealer = Math.max(0, Number(input.dealerPrice) || 0)
+  const contract = input.contractPrice != null ? Math.max(0, Number(input.contractPrice)) : dealer
+  const net = input.netPrice != null ? Math.max(0, Number(input.netPrice)) : contract
+  const row = {
+    company_id: input.companyId,
+    product_id: input.productId,
+    list_price: Math.max(0, Number(input.listPrice) || dealer),
+    dealer_price: dealer,
+    contract_price: contract,
+    net_price: net,
+    discount_rate: Math.max(0, Number(input.discountRate) || 0),
+    discount_group: input.discountGroup || null,
+    valid_from: input.validFrom || null,
+    valid_until: input.validUntil || null,
+    updated_at: new Date().toISOString(),
+  }
+  const { error } = await supabase
+    .from("customer_prices")
+    .upsert(row, { onConflict: "company_id,product_id" })
+  if (error) err(error.message)
+}
+
+export async function deleteCompanyPrice(id: string): Promise<void> {
+  await requireAdminUser()
+  const { error } = await supabase.from("customer_prices").delete().eq("id", id)
+  if (error) err(error.message)
+}
+
+/** CSV lines: sku;price;discount (semicolon or comma). Price maps to dealer/contract/net. */
+export async function importCompanyPricesCsv(companyId: string, csvText: string): Promise<{ upserted: number; skipped: string[] }> {
+  await requireAdminUser()
+  const lines = csvText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+  if (lines.length === 0) err("CSV boş")
+
+  const skipped: string[] = []
+  const rows: { sku: string; price: number; discount: number }[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const lower = line.toLowerCase()
+    if (i === 0 && (lower.includes("sku") || lower.includes("fiyat"))) continue
+    const parts = line.split(/[;,]/).map((p) => p.trim().replace(/^"|"$/g, ""))
+    const sku = parts[0]
+    const price = Number(parts[1]?.replace(",", "."))
+    const discount = parts[2] != null && parts[2] !== "" ? Number(parts[2].replace(",", ".")) : 0
+    if (!sku || !Number.isFinite(price) || price < 0) {
+      skipped.push(line)
+      continue
+    }
+    rows.push({ sku, price, discount: Number.isFinite(discount) ? discount : 0 })
+  }
+
+  if (rows.length === 0) err("İçe aktarılacak satır yok")
+
+  const skus = [...new Set(rows.map((r) => r.sku))]
+  const { data: products, error: pErr } = await supabase.from("products").select("id, sku").in("sku", skus)
+  if (pErr) err(pErr.message)
+  const skuMap = new Map((products ?? []).map((p) => [String(p.sku), String(p.id)]))
+
+  let upserted = 0
+  for (const r of rows) {
+    const productId = skuMap.get(r.sku)
+    if (!productId) {
+      skipped.push(r.sku)
+      continue
+    }
+    await upsertCompanyPrice({
+      companyId,
+      productId,
+      dealerPrice: r.price,
+      contractPrice: r.price,
+      netPrice: r.price,
+      listPrice: r.price,
+      discountRate: r.discount,
+    })
+    upserted += 1
+  }
+  return { upserted, skipped }
+}
+
 // Products
+export interface ProductStockLineInput {
+  warehouseId: string
+  warehouseName: string
+  quantity: number
+}
+
 export interface ProductInput {
   sku: string
   name: string
@@ -1572,7 +1963,10 @@ export interface ProductInput {
   category: string
   description: string
   basePrice: number
+  /** Legacy single-warehouse qty (used when stockLines omitted) */
   stockQuantity: number
+  /** Multi-warehouse stock; when set, overrides stockQuantity */
+  stockLines?: ProductStockLineInput[]
   isActive: boolean
   images?: string[]
   compatibleVehicles?: Product["compatibleVehicles"]
@@ -1601,17 +1995,30 @@ export async function uploadProductImage(file: File, folderKey: string): Promise
 
 export async function createProduct(input: ProductInput): Promise<Product> {
   await requireAdminUser()
-  const { data: wh } = await supabase.from("warehouses").select("id, name").eq("code", "ANA").maybeSingle()
   const now = new Date().toISOString()
-  const stock = [{
-    warehouseId: (wh?.id as string) ?? "",
-    warehouseName: (wh?.name as string) ?? "Ana Depo",
-    quantity: input.stockQuantity,
-    reserved: 0,
-    available: input.stockQuantity,
-    location: "",
-    lastUpdated: now,
-  }]
+  let stock: Array<Record<string, unknown>>
+  if (input.stockLines?.length) {
+    stock = input.stockLines.map((line) => ({
+      warehouseId: line.warehouseId,
+      warehouseName: line.warehouseName,
+      quantity: Math.max(0, line.quantity),
+      reserved: 0,
+      available: Math.max(0, line.quantity),
+      location: "",
+      lastUpdated: now,
+    }))
+  } else {
+    const { data: wh } = await supabase.from("warehouses").select("id, name").eq("code", "ANA").maybeSingle()
+    stock = [{
+      warehouseId: (wh?.id as string) ?? "",
+      warehouseName: (wh?.name as string) ?? "Ana Depo",
+      quantity: input.stockQuantity,
+      reserved: 0,
+      available: input.stockQuantity,
+      location: "",
+      lastUpdated: now,
+    }]
+  }
   const { data, error } = await supabase
     .from("products")
     .insert({
@@ -1642,19 +2049,46 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Pr
   const { data: existing } = await supabase.from("products").select("stock").eq("id", id).single()
   const now = new Date().toISOString()
   const stockArr = (existing?.stock as Array<Record<string, unknown>>) ?? []
-  const stock = stockArr.length
-    ? stockArr.map((s, i) => {
-        if (i !== 0) return s
-        const reserved = Number(s.reserved ?? 0)
-        return {
-          ...s,
+  let stock: Array<Record<string, unknown>>
+  if (input.stockLines?.length) {
+    const reservedByWh = new Map(
+      stockArr.map((s) => [String(s.warehouseId ?? ""), Number(s.reserved ?? 0)])
+    )
+    stock = input.stockLines.map((line) => {
+      const reserved = reservedByWh.get(line.warehouseId) ?? 0
+      const quantity = Math.max(0, line.quantity)
+      return {
+        warehouseId: line.warehouseId,
+        warehouseName: line.warehouseName,
+        quantity,
+        reserved,
+        available: Math.max(0, quantity - reserved),
+        location: "",
+        lastUpdated: now,
+      }
+    })
+  } else {
+    stock = stockArr.length
+      ? stockArr.map((s, i) => {
+          if (i !== 0) return s
+          const reserved = Number(s.reserved ?? 0)
+          return {
+            ...s,
+            quantity: input.stockQuantity,
+            available: Math.max(0, input.stockQuantity - reserved),
+            lastUpdated: now,
+          }
+        })
+      : [{
+          warehouseId: "",
+          warehouseName: "Ana Depo",
           quantity: input.stockQuantity,
-          reserved,
-          available: Math.max(0, input.stockQuantity - reserved),
+          reserved: 0,
+          available: input.stockQuantity,
+          location: "",
           lastUpdated: now,
-        }
-      })
-    : [{ warehouseId: "", warehouseName: "Ana Depo", quantity: input.stockQuantity, reserved: 0, available: input.stockQuantity, location: "", lastUpdated: now }]
+        }]
+  }
 
   const payload: Record<string, unknown> = {
     sku: input.sku,

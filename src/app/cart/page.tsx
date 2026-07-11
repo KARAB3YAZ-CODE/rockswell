@@ -17,8 +17,12 @@ import {
   HAVALE_EXTRA_DISCOUNT_RATE,
   TAX_RATE,
 } from "@/lib/pricing"
-import { createOrder, getCampaigns, getCustomerDiscountRate, getMyCreditSnapshot, type PaymentMethod } from "@/lib/api"
+import { createOrder, getCampaigns, getCustomerDiscountRate, getMyCreditSnapshot, getProducts, type PaymentMethod } from "@/lib/api"
+import { allocateWarehouses } from "@/lib/warehouse-alloc"
+import type { StockInfo } from "@/lib/types"
+import { cartLineKey } from "@/lib/cart-item"
 import { useAuth } from "@/lib/auth"
+import { canPlaceOrder } from "@/lib/permissions"
 import { useData } from "@/hooks/use-data"
 import {
   ShoppingCart, Trash2, Plus, Minus, Package,
@@ -28,10 +32,11 @@ import {
 
 export default function CartPage() {
   const router = useRouter()
-  const { isAuthenticated } = useAuth()
-  const { items, updateQuantity, removeItem, clearCart, orderNote, setOrderNote } = useCartStore()
+  const { isAuthenticated, user } = useAuth()
+  const { items, updateQuantity, removeItem, clearCart, orderNote, setOrderNote, setItemWarehouse } = useCartStore()
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("havale")
   const [submitting, setSubmitting] = useState(false)
+  const canOrder = canPlaceOrder(user)
 
   const { data: fetchedRate } = useData(
     () => (isAuthenticated ? getCustomerDiscountRate() : Promise.resolve(DEFAULT_DISCOUNT_RATE)),
@@ -72,8 +77,8 @@ export default function CartPage() {
     !!credit &&
     (credit.creditLimit <= 0 || credit.creditUsed + total > credit.creditLimit + 0.009)
 
-  const checkoutItems = () =>
-    items.map((i) => ({
+  const checkoutItems = async () => {
+    const base = items.map((i) => ({
       productId: i.productId,
       productName: i.productName,
       sku: i.sku,
@@ -81,7 +86,17 @@ export default function CartPage() {
       quantity: i.quantity,
       unitPrice: i.unitPrice,
       warehouseId: i.warehouseId,
+      priceLocked: i.priceLocked,
     }))
+    try {
+      const catalog = await getProducts()
+      const stockByProduct = new Map<string, StockInfo[]>()
+      for (const p of catalog) stockByProduct.set(p.id, p.stock)
+      return allocateWarehouses(base, stockByProduct)
+    } catch {
+      return base
+    }
+  }
 
   const handleSubmitOrder = async () => {
     if (!isAuthenticated) {
@@ -90,6 +105,10 @@ export default function CartPage() {
       return
     }
     if (items.length === 0) return
+    if (!canOrder) {
+      toast.error("Sipariş oluşturma yetkiniz yok")
+      return
+    }
     if (paymentMethod === "havale" && havaleCreditBlocked) {
       toast.error("Kredi limitiniz bu havale siparişi için yetersiz")
       return
@@ -97,8 +116,9 @@ export default function CartPage() {
 
     setSubmitting(true)
     try {
+      const allocated = await checkoutItems()
       const order = await createOrder({
-        items: checkoutItems(),
+        items: allocated,
         paymentMethod,
         notes: orderNote,
       })
@@ -128,8 +148,9 @@ export default function CartPage() {
 
     setSubmitting(true)
     try {
+      const allocated = await checkoutItems()
       const order = await createOrder({
-        items: checkoutItems(),
+        items: allocated,
         paymentMethod: "havale",
         notes: orderNote,
         asQuotation: true,
@@ -188,7 +209,7 @@ export default function CartPage() {
 
               {items.map((item) => (
                 <motion.div
-                  key={item.productId}
+                  key={cartLineKey(item.productId, item.warehouseId)}
                   layout
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -216,18 +237,38 @@ export default function CartPage() {
                           <h3 className="text-sm font-medium text-white mt-0.5 hover:text-accent transition-colors">{item.productName}</h3>
                         </Link>
                         <p className="text-xs text-white/40 mt-0.5">{formatPrice(item.unitPrice)} / adet</p>
+                        {(item.warehouseOptions?.length ?? 0) > 0 ? (
+                          <div className="mt-2 flex items-center gap-2">
+                            <Truck size={12} className="text-white/30 shrink-0" />
+                            <select
+                              value={item.warehouseId}
+                              onChange={(e) => setItemWarehouse(item.productId, item.warehouseId, e.target.value)}
+                              className="text-[11px] bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-white/70 max-w-[200px]"
+                            >
+                              {item.warehouseOptions!.map((w) => (
+                                <option key={w.warehouseId} value={w.warehouseId} className="bg-card">
+                                  {w.warehouseName} ({w.available})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : item.warehouseName ? (
+                          <p className="text-[11px] text-white/35 mt-1 flex items-center gap-1">
+                            <Truck size={11} /> {item.warehouseName}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="text-right shrink-0">
                         <div className="flex items-center border border-white/10 rounded-lg overflow-hidden">
                           <button
-                            onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                            onClick={() => updateQuantity(item.productId, item.quantity - 1, item.warehouseId)}
                             className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors"
                           >
                             <Minus size={12} />
                           </button>
                           <span className="w-10 text-center text-xs font-medium text-white">{item.quantity}</span>
                           <button
-                            onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                            onClick={() => updateQuantity(item.productId, item.quantity + 1, item.warehouseId)}
                             className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors"
                           >
                             <Plus size={12} />
@@ -236,7 +277,7 @@ export default function CartPage() {
                         <p className="text-sm font-bold text-white mt-2">{formatPrice(item.unitPrice * item.quantity)}</p>
                       </div>
                       <button
-                        onClick={() => removeItem(item.productId)}
+                        onClick={() => removeItem(item.productId, item.warehouseId)}
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-white/20 hover:text-danger hover:bg-danger/5 transition-colors shrink-0"
                       >
                         <Trash2 size={14} />
@@ -383,7 +424,7 @@ export default function CartPage() {
                     className="w-full"
                     icon={<CreditCard size={16} />}
                     onClick={handleSubmitOrder}
-                    disabled={submitting || havaleCreditBlocked}
+                    disabled={submitting || havaleCreditBlocked || !canOrder}
                   >
                     {submitting
                       ? "İşleniyor..."

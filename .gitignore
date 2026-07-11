@@ -38,7 +38,10 @@ yarn-error.log*
 
 # generated
 catalog_products.csv
-scripts/
+
+# Keep scripts/ in repo; ignore local dumps only
+scripts/*.local.*
+scripts/tmp/
 
 # typescript
 *.tsbuildinfo

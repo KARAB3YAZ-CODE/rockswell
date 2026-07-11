@@ -11,8 +11,8 @@ export const emptyAddress: Address = { street: "", city: "", district: "", count
 
 export const orderStatusLabels: Record<string, string> = {
   draft: "Ödeme Bekliyor",
-  pending_approval: "Onay Bekliyor",
-  approved: "Havale Onayı",
+  pending_approval: "Bayi Onayı",
+  approved: "Rockswell Onayı",
   quotation: "Teklif",
   confirmed: "Ödeme Onaylı",
   processing: "Hazırlanıyor",

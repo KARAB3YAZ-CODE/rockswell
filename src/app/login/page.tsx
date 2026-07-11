@@ -34,7 +34,11 @@ export default function LoginPage() {
   }, [])
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.search.includes("registered=true")) {
+    if (typeof window === "undefined") return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("registered") === "pending") {
+      toast.success("Başvurunuz alındı. Firma onayından sonra giriş yapabilirsiniz.")
+    } else if (params.get("registered") === "true") {
       toast.success("Kaydınız başarıyla oluşturuldu. Lütfen giriş yapın.")
     }
   }, [])

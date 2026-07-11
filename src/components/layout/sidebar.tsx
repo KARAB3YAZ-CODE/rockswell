@@ -1,13 +1,14 @@
 "use client"
 
 import { useAuth } from "@/lib/auth"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { useUIStore } from "@/lib/store"
 import { adminAbsoluteUrl } from "@/lib/admin-host"
+import { allowedNavHrefs } from "@/lib/permissions"
 import {
   LayoutDashboard, ShoppingBag, Package,
   FileText, Settings, HelpCircle, LogOut,
@@ -61,8 +62,15 @@ export function Sidebar() {
   const pathname = usePathname()
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
-  const { isAdmin, company } = useAuth()
-  const navItems = customerNav
+  const { isAdmin, company, user } = useAuth()
+  const navItems = useMemo(() => {
+    if (!user) return customerNav
+    const allowed = allowedNavHrefs(user.role)
+    if (allowed === "all") return customerNav
+    return customerNav.filter((item) =>
+      allowed.some((href) => item.href === href || item.href.startsWith(href))
+    )
+  }, [user])
 
   return (
     <motion.aside

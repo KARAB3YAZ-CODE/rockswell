@@ -1,11 +1,16 @@
-import type { Product } from "./types"
+import type { Product, StockInfo } from "./types"
+
+export type CartWarehouseOption = {
+  warehouseId: string
+  warehouseName: string
+  available: number
+}
 
 /** Cart line payload from a catalog product (keeps pricing metadata consistent). */
-export function cartItemFromProduct(
-  product: Product,
-  quantity?: number
-) {
+export function cartItemFromProduct(product: Product, quantity?: number) {
   const qty = quantity ?? product.minOrderQuantity ?? 1
+  const preferred =
+    product.stock.find((s) => s.available > 0) || product.stock[0]
   return {
     productId: product.id,
     productName: product.name,
@@ -15,10 +20,9 @@ export function cartItemFromProduct(
     quantity: qty,
     unitPrice: product.basePrice,
     totalPrice: product.basePrice * qty,
-    warehouseId:
-      product.stock.find((s) => s.available > 0)?.warehouseId ||
-      product.stock[0]?.warehouseId ||
-      "",
+    warehouseId: preferred?.warehouseId || "",
+    warehouseName: preferred?.warehouseName || "",
+    warehouseOptions: stockToOptions(product.stock),
     minOrderQuantity: product.minOrderQuantity,
     maxOrderQuantity: product.maxOrderQuantity,
     priceLocked: product.customerPriceApplied,
@@ -27,6 +31,20 @@ export function cartItemFromProduct(
   }
 }
 
+export function stockToOptions(stock: StockInfo[]): CartWarehouseOption[] {
+  return stock
+    .filter((s) => s.warehouseId)
+    .map((s) => ({
+      warehouseId: s.warehouseId,
+      warehouseName: s.warehouseName || s.warehouseId,
+      available: s.available,
+    }))
+}
+
 export function productInStock(product: Product): boolean {
   return product.stock.some((s) => s.available > 0)
+}
+
+export function cartLineKey(productId: string, warehouseId: string): string {
+  return `${productId}::${warehouseId || "_"}`
 }

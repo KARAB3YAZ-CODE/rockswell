@@ -14,7 +14,7 @@ import {
   getAdminStats, getAllUsers, getAllCompanies, getAllCampaigns, getAllWarehouses,
   getCategories, getVehicleBrands, getProductBrands, getSiteSettings,
   createCampaign, updateCampaign, deleteCampaign, setCampaignActive,
-  createCompany, updateCompany, deleteCompany,
+  createCompany, updateCompany, deleteCompany, setCompanyActive,
   createWarehouse, updateWarehouse, deleteWarehouse,
   updateOrderStatus, bulkUpdateOrderStatus, deleteOrder,
   updateUserByAdmin, adminCreateUser, adminDeleteUser, bulkSetUsersActive,
@@ -41,7 +41,8 @@ const roleLabels = ROLE_LABELS as Record<string, string>
 
 const ORDER_STATUS_FILTERS: { id: string; label: string }[] = [
   { id: "all", label: "Tümü" },
-  { id: "pending_approval", label: "Onay bekleyen" },
+  { id: "pending_approval", label: "Bayi onayı" },
+  { id: "approved", label: "Rockswell onayı" },
   { id: "quotation", label: "Teklif" },
   { id: "confirmed", label: "Onaylı" },
   { id: "processing", label: "Hazırlanan" },
@@ -58,11 +59,12 @@ const COMMON_VEHICLE_BRANDS = [
 
 function nextStatusFor(status: Order["status"]): { status: Order["status"]; label: string } | null {
   switch (status) {
-    case "pending_approval":
+    case "approved":
     case "quotation":
       return { status: "confirmed", label: "Onayla" }
+    case "pending_approval":
+      return null // bayi onayı bekleniyor
     case "confirmed":
-    case "approved":
       return { status: "processing", label: "Hazırlığa Al" }
     case "processing":
       return { status: "shipped", label: "Kargola" }
@@ -86,7 +88,7 @@ export function AdminOverview() {
   }, [companies])
 
   const pendingCount = useMemo(
-    () => orders.filter((o) => o.status === "pending_approval" || o.status === "quotation").length,
+    () => orders.filter((o) => o.status === "approved" || o.status === "quotation").length,
     [orders]
   )
   const processingCount = useMemo(
@@ -102,7 +104,7 @@ export function AdminOverview() {
   ]
 
   const quick = [
-    { label: "Onay bekleyen", value: pendingCount, href: `${adminPath("/orders")}?status=pending_approval`, tone: "warning" as const },
+    { label: "Onay bekleyen", value: pendingCount, href: `${adminPath("/orders")}?status=approved`, tone: "warning" as const },
     { label: "Hazırlık / kargo", value: processingCount, href: `${adminPath("/orders")}?status=processing`, tone: "info" as const },
     { label: "Ürünler", value: "Yönet", href: adminPath("/products"), tone: "accent" as const },
     { label: "Raporlar", value: "Aç", href: adminPath("/reports"), tone: "success" as const },
@@ -648,16 +650,28 @@ export function AdminCompanies() {
   const [form, setForm] = useState<Company | "new" | null>(null)
   const [del, setDel] = useState<Company | null>(null)
   const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "active" | "inactive">("all")
   const [sort, setSort] = useState<"name" | "discount" | "credit">("name")
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const cityOptions = useMemo(
     () => [...new Set((companies ?? []).map((c) => c.address?.city?.trim()).filter(Boolean) as string[])],
     [companies]
   )
 
+  const pendingCount = useMemo(
+    () => (companies ?? []).filter((c) => !c.isActive).length,
+    [companies]
+  )
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     let list = companies ?? []
+    if (statusFilter === "pending" || statusFilter === "inactive") {
+      list = list.filter((c) => !c.isActive)
+    } else if (statusFilter === "active") {
+      list = list.filter((c) => c.isActive)
+    }
     if (q) {
       list = list.filter(
         (c) =>
@@ -673,7 +687,20 @@ export function AdminCompanies() {
       if (sort === "credit") return b.creditLimit - a.creditLimit || a.name.localeCompare(b.name, "tr")
       return a.name.localeCompare(b.name, "tr")
     })
-  }, [companies, search, sort])
+  }, [companies, search, sort, statusFilter])
+
+  const toggleActive = async (c: Company, next: boolean) => {
+    setTogglingId(c.id)
+    try {
+      await setCompanyActive(c.id, next)
+      toast.success(next ? "Firma onaylandı / aktifleştirildi" : "Firma pasife alındı")
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Güncellenemedi")
+    } finally {
+      setTogglingId(null)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -681,7 +708,7 @@ export function AdminCompanies() {
         icon={Building2}
         tone="accent"
         title="Şirket Yönetimi"
-        subtitle={`${filtered.length} / ${companies?.length ?? 0} şirket`}
+        subtitle={`${filtered.length} / ${companies?.length ?? 0} şirket${pendingCount ? ` · ${pendingCount} onay bekliyor` : ""}`}
         action={<Button size="sm" icon={<Plus size={14} />} onClick={() => setForm("new")}>Yeni Şirket</Button>}
       />
 
@@ -696,6 +723,16 @@ export function AdminCompanies() {
             className={cn(inputCls, "pl-9")}
           />
         </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+          className={cn(inputCls, "sm:w-44 cursor-pointer")}
+        >
+          <option value="all" className="bg-card">Durum: Tümü</option>
+          <option value="pending" className="bg-card">Onay bekleyen</option>
+          <option value="active" className="bg-card">Aktif</option>
+          <option value="inactive" className="bg-card">Pasif</option>
+        </select>
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as typeof sort)}
@@ -733,7 +770,12 @@ export function AdminCompanies() {
                     {c.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-base font-semibold text-white truncate group-hover:text-accent transition-colors">{c.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-semibold text-white truncate group-hover:text-accent transition-colors">{c.name}</h3>
+                      <Badge variant={c.isActive ? "success" : "warning"} size="sm">
+                        {c.isActive ? "Aktif" : "Onay bekliyor"}
+                      </Badge>
+                    </div>
                     <p className="text-xs text-white/40 truncate">{c.email || c.phone || "—"}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -760,6 +802,25 @@ export function AdminCompanies() {
                   </div>
                   {missing.length > 0 && <div className="pt-1"><Warn items={missing} /></div>}
                   <div className="flex gap-2 pt-2">
+                    {c.isActive ? (
+                      <button
+                        type="button"
+                        disabled={togglingId === c.id}
+                        onClick={() => toggleActive(c, false)}
+                        className="flex-1 text-center text-[11px] py-1.5 rounded-lg border border-danger/30 text-danger/80 hover:bg-danger/10 disabled:opacity-50"
+                      >
+                        Pasife al
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={togglingId === c.id}
+                        onClick={() => toggleActive(c, true)}
+                        className="flex-1 text-center text-[11px] py-1.5 rounded-lg border border-success/30 text-success hover:bg-success/10 disabled:opacity-50"
+                      >
+                        Onayla
+                      </button>
+                    )}
                     <Link
                       href={`${adminPath("/users")}?company=${encodeURIComponent(c.name)}`}
                       className="flex-1 text-center text-[11px] py-1.5 rounded-lg border border-white/10 text-white/50 hover:text-accent hover:border-accent/30"

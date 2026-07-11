@@ -3,8 +3,10 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { Notification, User, Company } from "./types"
+import type { CartWarehouseOption } from "./cart-item"
+import { cartLineKey } from "./cart-item"
 
-interface CartItem {
+export interface CartItem {
   productId: string
   productName: string
   sku: string
@@ -14,6 +16,8 @@ interface CartItem {
   unitPrice: number
   totalPrice: number
   warehouseId: string
+  warehouseName?: string
+  warehouseOptions?: CartWarehouseOption[]
   minOrderQuantity: number
   maxOrderQuantity?: number
   /** customer_prices net — skip company discount at checkout */
@@ -30,8 +34,9 @@ interface CartStore {
   setOrderNote: (note: string) => void
   appendOrderNote: (note: string) => void
   addItem: (item: CartItem) => void
-  removeItem: (productId: string) => void
-  updateQuantity: (productId: string, quantity: number) => void
+  removeItem: (productId: string, warehouseId?: string) => void
+  updateQuantity: (productId: string, quantity: number, warehouseId?: string) => void
+  setItemWarehouse: (productId: string, fromWarehouseId: string, toWarehouseId: string) => void
   clearCart: () => void
   getTotalItems: () => number
   getSubtotal: () => number
@@ -41,6 +46,12 @@ function clampQty(qty: number, item: { minOrderQuantity: number; maxOrderQuantit
   const min = item.minOrderQuantity || 1
   const max = item.maxOrderQuantity && item.maxOrderQuantity > 0 ? item.maxOrderQuantity : 9999
   return Math.min(Math.max(qty, min), max)
+}
+
+function sameLine(a: CartItem, productId: string, warehouseId?: string) {
+  if (a.productId !== productId) return false
+  if (warehouseId === undefined) return true
+  return a.warehouseId === warehouseId
 }
 
 export const useCartStore = create<CartStore>()(
@@ -61,31 +72,74 @@ export const useCartStore = create<CartStore>()(
         }),
       addItem: (item) =>
         set((state) => {
-          const existing = state.items.find((i) => i.productId === item.productId)
+          const existing = state.items.find(
+            (i) => i.productId === item.productId && i.warehouseId === item.warehouseId
+          )
           if (existing) {
             return {
               items: state.items.map((i) => {
-                if (i.productId !== item.productId) return i
+                if (i.productId !== item.productId || i.warehouseId !== item.warehouseId) return i
                 const quantity = clampQty(i.quantity + item.quantity, i)
-                return { ...i, quantity, totalPrice: i.unitPrice * quantity }
+                return {
+                  ...i,
+                  quantity,
+                  totalPrice: i.unitPrice * quantity,
+                  warehouseOptions: item.warehouseOptions ?? i.warehouseOptions,
+                  warehouseName: item.warehouseName ?? i.warehouseName,
+                }
               }),
             }
           }
           const quantity = clampQty(item.quantity, item)
           return { items: [...state.items, { ...item, quantity, totalPrice: item.unitPrice * quantity }] }
         }),
-      removeItem: (productId) =>
+      removeItem: (productId, warehouseId) =>
         set((state) => ({
-          items: state.items.filter((i) => i.productId !== productId),
+          items: state.items.filter((i) => !sameLine(i, productId, warehouseId)),
         })),
-      updateQuantity: (productId, quantity) =>
+      updateQuantity: (productId, quantity, warehouseId) =>
         set((state) => ({
           items: state.items.map((i) => {
-            if (i.productId !== productId) return i
+            if (!sameLine(i, productId, warehouseId)) return i
             const q = clampQty(quantity, i)
             return { ...i, quantity: q, totalPrice: i.unitPrice * q }
           }),
         })),
+      setItemWarehouse: (productId, fromWarehouseId, toWarehouseId) =>
+        set((state) => {
+          if (fromWarehouseId === toWarehouseId) return state
+          const source = state.items.find(
+            (i) => i.productId === productId && i.warehouseId === fromWarehouseId
+          )
+          if (!source) return state
+          const opt = source.warehouseOptions?.find((o) => o.warehouseId === toWarehouseId)
+          const withoutSource = state.items.filter(
+            (i) => cartLineKey(i.productId, i.warehouseId) !== cartLineKey(productId, fromWarehouseId)
+          )
+          const target = withoutSource.find(
+            (i) => i.productId === productId && i.warehouseId === toWarehouseId
+          )
+          if (target) {
+            const quantity = clampQty(target.quantity + source.quantity, target)
+            return {
+              items: withoutSource.map((i) =>
+                i.productId === productId && i.warehouseId === toWarehouseId
+                  ? { ...i, quantity, totalPrice: i.unitPrice * quantity }
+                  : i
+              ),
+            }
+          }
+          return {
+            items: [
+              ...withoutSource,
+              {
+                ...source,
+                warehouseId: toWarehouseId,
+                warehouseName: opt?.warehouseName ?? toWarehouseId,
+              },
+            ],
+          }
+        }),
       clearCart: () => set({ items: [], orderNote: "" }),
       getTotalItems: () => get().items.reduce((acc, i) => acc + i.quantity, 0),
       getSubtotal: () => get().items.reduce((acc, i) => acc + i.totalPrice, 0),

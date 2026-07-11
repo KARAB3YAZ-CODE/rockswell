@@ -11,6 +11,8 @@ export interface Company {
   /** Firma bazlı bayi iskonto oranı (yüzde, örn. 25 = %25) */
   discountRate: number
   creditLimit: number
+  /** false = kayıt onayı bekliyor / pasife alınmış */
+  isActive: boolean
   users: User[]
 }
 
@@ -113,7 +115,9 @@ export interface Price {
 }
 
 export interface CustomerPrice {
-  customerId: string
+  id?: string
+  companyId: string
+  customerId?: string
   productId: string
   price: Price
   discountGroup?: string

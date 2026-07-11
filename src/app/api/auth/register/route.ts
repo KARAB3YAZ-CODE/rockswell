@@ -25,6 +25,7 @@ export async function POST(request: Request) {
         tax_office: "",
         phone: phone || "",
         email,
+        is_active: false,
         address: {
           street: "",
           city: "",
