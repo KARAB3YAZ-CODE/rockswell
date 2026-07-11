@@ -222,6 +222,7 @@ async function adjustPrices(
   }
 
   const factor = 1 + percent / 100
+  const snapshot = products.map((p) => ({ id: String(p.id), base_price: Number(p.base_price) }))
   const samples = products.slice(0, 5).map((p) => ({
     sku: p.sku,
     name: p.name,
@@ -269,6 +270,7 @@ async function adjustPrices(
       matchedProducts: products.length,
       updated,
       samples,
+      snapshot,
     },
   }
 }
@@ -671,6 +673,7 @@ async function setCompanyDiscount(
       dryRun: false,
       companyId: company.id,
       companyName: company.name,
+      oldRate: Number(company.discount_rate ?? 25),
       newRate: discountRate,
     },
   }
@@ -707,6 +710,115 @@ async function listLowStock(service: SupabaseClient, args: { threshold?: number 
     .slice(0, 25)
 
   return { ok: true, data: { threshold, products: low, count: low.length } }
+}
+
+async function restorePrices(
+  service: SupabaseClient,
+  args: { items: { id: string; base_price: number }[] }
+): Promise<ToolResult> {
+  const items = Array.isArray(args.items) ? args.items : []
+  if (!items.length) return { ok: false, error: "Geri alınacak fiyat kaydı yok" }
+  let restored = 0
+  const chunkSize = 40
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize)
+    await Promise.all(
+      chunk.map(async (item) => {
+        const { error } = await service
+          .from("products")
+          .update({ base_price: Number(item.base_price) })
+          .eq("id", item.id)
+        if (!error) restored += 1
+      })
+    )
+  }
+  return { ok: true, data: { restored, total: items.length } }
+}
+
+async function listWarehouses(service: SupabaseClient): Promise<ToolResult> {
+  const { data, error } = await service
+    .from("warehouses")
+    .select("id, name, code, address, is_active, capacity, used_capacity")
+    .order("name")
+    .limit(40)
+  if (error) return { ok: false, error: error.message }
+  return {
+    ok: true,
+    data: {
+      warehouses: (data ?? []).map((w) => ({
+        id: w.id,
+        name: w.name,
+        code: w.code,
+        city: String((w.address as { city?: string } | null)?.city ?? "—"),
+        isActive: w.is_active,
+        capacity: w.capacity,
+        used: w.used_capacity,
+      })),
+    },
+  }
+}
+
+async function listRecentOrders(service: SupabaseClient, args: { limit?: number }): Promise<ToolResult> {
+  const limit = Math.min(30, Math.max(1, Number(args.limit) || 12))
+  const { data, error } = await service
+    .from("orders")
+    .select("id, order_number, status, pricing, created_at, companies(name)")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) return { ok: false, error: error.message }
+  return {
+    ok: true,
+    data: {
+      orders: (data ?? []).map((o) => ({
+        orderNumber: o.order_number,
+        status: o.status,
+        companyName: (o.companies as { name?: string } | null)?.name ?? "—",
+        total: Number((o.pricing as { grandTotal?: number } | null)?.grandTotal ?? 0),
+        createdAt: o.created_at,
+      })),
+    },
+  }
+}
+
+async function listUsers(service: SupabaseClient): Promise<ToolResult> {
+  const { data, error } = await service
+    .from("profiles")
+    .select("id, name, surname, role, is_active, company_id, companies(name)")
+    .order("created_at", { ascending: false })
+    .limit(30)
+  if (error) return { ok: false, error: error.message }
+  return {
+    ok: true,
+    data: {
+      users: (data ?? []).map((u) => ({
+        name: `${u.name ?? ""} ${u.surname ?? ""}`.trim(),
+        role: u.role,
+        isActive: u.is_active,
+        companyName: (u.companies as { name?: string } | null)?.name ?? "—",
+      })),
+    },
+  }
+}
+
+async function listInvoices(service: SupabaseClient): Promise<ToolResult> {
+  const { data, error } = await service
+    .from("invoices")
+    .select("id, invoice_number, status, grand_total, created_at, companies(name)")
+    .order("created_at", { ascending: false })
+    .limit(20)
+  if (error) return { ok: false, error: error.message }
+  return {
+    ok: true,
+    data: {
+      invoices: (data ?? []).map((inv) => ({
+        invoiceNumber: inv.invoice_number,
+        status: inv.status,
+        total: Number(inv.grand_total ?? 0),
+        companyName: (inv.companies as { name?: string } | null)?.name ?? "—",
+        createdAt: inv.created_at,
+      })),
+    },
+  }
 }
 
 export async function runAssistantTool(
@@ -768,6 +880,16 @@ export async function runAssistantTool(
       })
     case "list_low_stock":
       return listLowStock(service, args as { threshold?: number })
+    case "restore_prices":
+      return restorePrices(service, args as { items: { id: string; base_price: number }[] })
+    case "list_warehouses":
+      return listWarehouses(service)
+    case "list_recent_orders":
+      return listRecentOrders(service, args as { limit?: number })
+    case "list_users":
+      return listUsers(service)
+    case "list_invoices":
+      return listInvoices(service)
     default:
       return { ok: false, error: `Bilinmeyen araç: ${name}` }
   }
@@ -781,80 +903,110 @@ function isCancel(text: string) {
   return /^(iptal|vazgec|vazgeç|hayir|hayır|no)\b/i.test(norm(text))
 }
 
-function formatToolResult(tool: string, result: ToolResult): { reply: string; pending: PendingAction | null } {
-  if (!result.ok) return { reply: `Hata: ${result.error}`, pending: null }
+function isUndo(text: string) {
+  return /^(geri\s*al|undo|geri)\b/i.test(norm(text))
+}
+
+export type AssistantChoice = { id: string; label: string }
+
+export type FormattedResult = {
+  reply: string
+  pending: PendingAction | null
+  choices?: AssistantChoice[]
+  undoAction?: PendingAction | null
+}
+
+function fmt(
+  reply: string,
+  pending: PendingAction | null = null,
+  extra?: { choices?: AssistantChoice[]; undoAction?: PendingAction | null }
+): FormattedResult {
+  return {
+    reply,
+    pending,
+    choices: extra?.choices,
+    undoAction: extra?.undoAction ?? null,
+  }
+}
+
+function pickChoices(options: string[]): AssistantChoice[] {
+  return options.map((o, i) => ({ id: String(i + 1), label: o }))
+}
+
+function formatToolResult(tool: string, result: ToolResult): FormattedResult {
+  if (!result.ok) return fmt(`Hata: ${result.error}`)
   const data = result.data as Record<string, unknown>
 
   // Ambiguous pick flows
   if (data.needsPick && Array.isArray(data.options)) {
     const options = data.options as string[]
-    const lines = options.map((o, i) => `${i + 1}) ${o}`).join("\n")
+    const choices = pickChoices(options)
     if (data.pickKind === "company_discount") {
-      return {
-        reply: `Birden fazla firma eşleşti. Numara veya ad yazın:\n${lines}`,
-        pending: {
-          tool: "_pick",
-          args: {
-            pickKind: "company_discount",
-            options,
-            optionIds: data.optionIds,
-            discountRate: data.discountRate,
-          },
-        },
-      }
-    }
-    if (data.pickKind === "campaign_toggle") {
-      return {
-        reply: `Birden fazla kampanya eşleşti. Numara veya ad yazın:\n${lines}`,
-        pending: {
-          tool: "_pick",
-          args: {
-            pickKind: "campaign_toggle",
-            options,
-            isActive: data.isActive,
-          },
-        },
-      }
-    }
-    // category/brand price adjust
-    return {
-      reply: `Birden fazla eşleşme var. Hangisini kastettiniz?\n${lines}\n\nNumara veya tam adı yazın.`,
-      pending: {
+      return fmt(`Bunu mu demek istediniz? Aşağıdan firmayı seçin:`, {
         tool: "_pick",
         args: {
-          pickKind: "adjust_prices",
+          pickKind: "company_discount",
           options,
-          filterType: data.filterType,
-          percent: data.percent,
+          optionIds: data.optionIds,
+          discountRate: data.discountRate,
         },
-      },
+      }, { choices })
     }
+    if (data.pickKind === "campaign_toggle") {
+      return fmt(`Bunu mu demek istediniz? Kampanyayı seçin:`, {
+        tool: "_pick",
+        args: {
+          pickKind: "campaign_toggle",
+          options,
+          isActive: data.isActive,
+        },
+      }, { choices })
+    }
+    return fmt(`Bunu mu demek istediniz? Aşağıdan seçin:`, {
+      tool: "_pick",
+      args: {
+        pickKind: "adjust_prices",
+        options,
+        filterType: data.filterType,
+        percent: data.percent,
+      },
+    }, { choices })
   }
 
   if (tool === "list_categories") {
     const cats = (data.categories as { name: string; productCount: number }[]) ?? []
     const lines = cats.slice(0, 35).map((c) => `• ${c.name} (${c.productCount})`)
-    return {
-      reply: `Kategoriler (${data.totalCategories}):\n${lines.join("\n")}${cats.length > 35 ? "\n…" : ""}`,
-      pending: null,
-    }
+    const choices = cats.slice(0, 12).map((c) => ({
+      id: c.name,
+      label: `${c.name} (%15 zam)`,
+    }))
+    return fmt(
+      `Kategoriler (${data.totalCategories}):\n${lines.join("\n")}${cats.length > 35 ? "\n…" : ""}\n\nHızlı işlem için bir kategoriye tıklayabilirsiniz.`,
+      null,
+      { choices }
+    )
   }
 
   if (tool === "list_brands") {
     const brands = (data.brands as { name: string; productCount: number }[]) ?? []
-    return {
-      reply: `Markalar:\n${brands.map((b) => `• ${b.name} (${b.productCount})`).join("\n")}`,
-      pending: null,
-    }
+    return fmt(
+      `Markalar:\n${brands.map((b) => `• ${b.name} (${b.productCount})`).join("\n")}`,
+      null,
+      {
+        choices: brands.slice(0, 12).map((b) => ({
+          id: b.name,
+          label: `${b.name} (%10 indirim)`,
+        })),
+      }
+    )
   }
 
   if (tool === "search_products") {
     const products = (data.products as { sku: string; name: string; basePrice: number; category: string }[]) ?? []
-    if (!products.length) return { reply: "Ürün bulunamadı.", pending: null }
-    return {
-      reply: `Bulunan ürünler:\n${products.map((p) => `• ${p.sku} — ${p.name} (${p.category}) ${formatMoney(p.basePrice)}`).join("\n")}`,
-      pending: null,
-    }
+    if (!products.length) return fmt("Ürün bulunamadı.")
+    return fmt(
+      `Bulunan ürünler:\n${products.map((p) => `• ${p.sku} — ${p.name} (${p.category}) ${formatMoney(p.basePrice)}`).join("\n")}`
+    )
   }
 
   if (tool === "adjust_prices") {
@@ -863,9 +1015,9 @@ function formatToolResult(tool: string, result: ToolResult): { reply: string; pe
       .map((s) => `• ${s.sku}: ${formatMoney(s.oldPrice)} → ${formatMoney(s.newPrice)}`)
       .join("\n")
     if (data.dryRun) {
-      return {
-        reply: `Önizleme — ${data.filterType === "brand" ? "marka" : "kategori"}: ${data.filterValue}\n• ${data.matchedProducts} ürün\n• %${data.percent} ${Number(data.percent) > 0 ? "zam" : "indirim"}\n• Ort. ${formatMoney(Number(data.avgOld))} → ${formatMoney(Number(data.avgNew))}\n${sampleLines}\n\nUygulamak için “onayla”, vazgeçmek için “iptal”.`,
-        pending: {
+      return fmt(
+        `Önizleme — ${data.filterType === "brand" ? "marka" : "kategori"}: ${data.filterValue}\n• ${data.matchedProducts} ürün\n• %${data.percent} ${Number(data.percent) > 0 ? "zam" : "indirim"}\n• Ort. ${formatMoney(Number(data.avgOld))} → ${formatMoney(Number(data.avgNew))}\n${sampleLines}\n\nOnaylıyor musunuz?`,
+        {
           tool: "adjust_prices",
           args: {
             filterType: data.filterType,
@@ -874,21 +1026,31 @@ function formatToolResult(tool: string, result: ToolResult): { reply: string; pe
             dryRun: false,
             resolved: true,
           },
+        }
+      )
+    }
+    return fmt(
+      `Güncellendi: ${data.updated} ürün (%${data.percent}, ${data.filterValue}).\n${sampleLines}\n\nYanlış olduysa “Geri al”a basın.`,
+      null,
+      {
+        undoAction: {
+          tool: "restore_prices",
+          args: { items: data.snapshot },
         },
       }
-    }
-    return {
-      reply: `Güncellendi: ${data.updated} ürün (%${data.percent}, ${data.filterValue}).\n${sampleLines}`,
-      pending: null,
-    }
+    )
+  }
+
+  if (tool === "restore_prices") {
+    return fmt(`${data.restored}/${data.total} ürün fiyatı eski haline alındı.`)
   }
 
   if (tool === "create_campaign") {
     const preview = (data.preview ?? data.campaign) as Record<string, unknown>
     if (data.dryRun) {
-      return {
-        reply: `Kampanya önizlemesi:\n• ${preview.name}\n• %${preview.discountRate} indirim\n• ${preview.durationDays} gün\n• ${String(preview.startDate).slice(0, 10)} → ${String(preview.endDate).slice(0, 10)}\n\n“onayla” ile oluştur.`,
-        pending: {
+      return fmt(
+        `Kampanya önizlemesi:\n• ${preview.name}\n• %${preview.discountRate} indirim\n• ${preview.durationDays} gün\n• ${String(preview.startDate).slice(0, 10)} → ${String(preview.endDate).slice(0, 10)}\n\nOluşturulsun mu?`,
+        {
           tool: "create_campaign",
           args: {
             name: preview.name,
@@ -899,13 +1061,14 @@ function formatToolResult(tool: string, result: ToolResult): { reply: string; pe
             brands: preview.brands,
             dryRun: false,
           },
-        },
-      }
+        }
+      )
     }
-    return {
-      reply: `Kampanya hazır: “${preview.name}” (%${preview.discountRate}).`,
-      pending: null,
-    }
+    return fmt(`Kampanya hazır: “${preview.name}” (%${preview.discountRate}).`, null, {
+      undoAction: preview.id
+        ? { tool: "toggle_campaign", args: { query: preview.name, isActive: false, dryRun: false } }
+        : null,
+    })
   }
 
   if (tool === "list_campaigns") {
@@ -915,103 +1078,134 @@ function formatToolResult(tool: string, result: ToolResult): { reply: string; pe
       isActive: boolean
       endDate: string
     }[]) ?? []
-    if (!campaigns.length) return { reply: "Kampanya yok.", pending: null }
-    return {
-      reply: `Kampanyalar:\n${campaigns
+    if (!campaigns.length) return fmt("Kampanya yok.")
+    return fmt(
+      `Kampanyalar:\n${campaigns
         .map((c) => `• ${c.name} — %${c.discountRate} — ${c.isActive ? "aktif" : "pasif"} — bitiş ${String(c.endDate).slice(0, 10)}`)
         .join("\n")}`,
-      pending: null,
-    }
+      null,
+      {
+        choices: campaigns.slice(0, 8).map((c) => ({
+          id: c.name,
+          label: c.isActive ? `${c.name} — kapat` : `${c.name} — aç`,
+        })),
+      }
+    )
   }
 
   if (tool === "toggle_campaign") {
     if (data.dryRun) {
-      return {
-        reply: `Kampanya “${data.name}” ${data.isActive ? "açılacak" : "kapatılacak"} (şu an: ${data.currentActive ? "aktif" : "pasif"}).\n“onayla” yazın.`,
-        pending: {
+      return fmt(
+        `Kampanya “${data.name}” ${data.isActive ? "açılacak" : "kapatılacak"} (şu an: ${data.currentActive ? "aktif" : "pasif"}).\nOnaylıyor musunuz?`,
+        {
           tool: "toggle_campaign",
           args: { query: data.name, isActive: data.isActive, dryRun: false },
-        },
-      }
+        }
+      )
     }
-    return {
-      reply: `“${data.name}” kampanyası ${data.isActive ? "açıldı" : "kapatıldı"}.`,
-      pending: null,
-    }
+    return fmt(`“${data.name}” kampanyası ${data.isActive ? "açıldı" : "kapatıldı"}.`, null, {
+      undoAction: {
+        tool: "toggle_campaign",
+        args: { query: data.name, isActive: !data.isActive, dryRun: false },
+      },
+    })
   }
 
   if (tool === "set_maintenance") {
-    return {
-      reply: data.maintenanceEnabled
+    return fmt(
+      data.maintenanceEnabled
         ? `Bakım modu açıldı.\n${data.maintenanceMessage}`
         : "Bakım modu kapatıldı.",
-      pending: null,
-    }
+      null,
+      {
+        undoAction: {
+          tool: "set_maintenance",
+          args: { enabled: !data.maintenanceEnabled },
+        },
+      }
+    )
   }
 
   if (tool === "set_price_update_notice") {
-    if (!data.priceUpdateEnabled) return { reply: "Fiyat güncelleme bildirimi kapatıldı.", pending: null }
-    return {
-      reply: `Fiyat güncelleme bildirimi açıldı${data.priceUpdateDate ? ` (${data.priceUpdateDate})` : ""}.`,
-      pending: null,
+    if (!data.priceUpdateEnabled) {
+      return fmt("Fiyat güncelleme bildirimi kapatıldı.", null, {
+        undoAction: {
+          tool: "set_price_update_notice",
+          args: { enabled: true, date: data.priceUpdateDate, message: data.priceUpdateMessage },
+        },
+      })
     }
+    return fmt(
+      `Fiyat güncelleme bildirimi açıldı${data.priceUpdateDate ? ` (${data.priceUpdateDate})` : ""}.`,
+      null,
+      {
+        undoAction: { tool: "set_price_update_notice", args: { enabled: false } },
+      }
+    )
   }
 
   if (tool === "get_site_status") {
-    return {
-      reply: `Sistem durumu:\n• Bakım: ${data.maintenanceEnabled ? "AÇIK" : "kapalı"}\n• Fiyat bildirimi: ${data.priceUpdateEnabled ? `AÇIK${data.priceUpdateDate ? ` (${data.priceUpdateDate})` : ""}` : "kapalı"}`,
-      pending: null,
-    }
+    return fmt(
+      `Sistem durumu:\n• Bakım: ${data.maintenanceEnabled ? "AÇIK" : "kapalı"}\n• Fiyat bildirimi: ${data.priceUpdateEnabled ? `AÇIK${data.priceUpdateDate ? ` (${data.priceUpdateDate})` : ""}` : "kapalı"}`
+    )
   }
 
   if (tool === "get_business_summary") {
-    return {
-      reply: `Özet:\n• Aktif ürün: ${data.activeProducts}\n• Firma: ${data.companies}\n• Kullanıcı: ${data.users}\n• Onay bekleyen: ${data.pendingApproval}\n• İptal: ${data.cancelled}\n• Son 7 gün sipariş: ${data.last7DaysOrders}\n• Tahmini ciro: ${formatMoney(Number(data.paidRevenueApprox ?? 0))}`,
-      pending: null,
-    }
+    return fmt(
+      `Özet:\n• Aktif ürün: ${data.activeProducts}\n• Firma: ${data.companies}\n• Kullanıcı: ${data.users}\n• Onay bekleyen: ${data.pendingApproval}\n• İptal: ${data.cancelled}\n• Son 7 gün sipariş: ${data.last7DaysOrders}\n• Tahmini ciro: ${formatMoney(Number(data.paidRevenueApprox ?? 0))}`
+    )
   }
 
   if (tool === "list_pending_orders") {
     const orders = (data.orders as { orderNumber: string; companyName: string; total: number }[]) ?? []
-    if (!orders.length) return { reply: "Onay bekleyen sipariş yok.", pending: null }
-    return {
-      reply: `Onay bekleyen (${orders.length}):\n${orders
+    if (!orders.length) return fmt("Onay bekleyen sipariş yok.")
+    return fmt(
+      `Onay bekleyen (${orders.length}):\n${orders
         .map((o) => `• ${o.orderNumber} — ${o.companyName} — ${formatMoney(o.total)}`)
-        .join("\n")}\n\nHepsini onaylamak için “bekleyen siparişleri onayla” yazın.`,
-      pending: null,
-    }
+        .join("\n")}`,
+      null,
+      {
+        choices: [{ id: "approve_all", label: "Hepsini onayla (önizle)" }],
+      }
+    )
   }
 
   if (tool === "approve_pending_orders") {
-    if (data.count === 0) return { reply: "Onay bekleyen sipariş yok.", pending: null }
+    if (data.count === 0) return fmt("Onay bekleyen sipariş yok.")
     if (data.dryRun) {
       const samples = (data.samples as { orderNumber: string; companyName: string; total: number }[]) ?? []
-      return {
-        reply: `${data.count} sipariş onaylanacak:\n${samples
+      return fmt(
+        `${data.count} sipariş onaylanacak:\n${samples
           .map((o) => `• ${o.orderNumber} — ${o.companyName} — ${formatMoney(o.total)}`)
-          .join("\n")}\n\n“onayla” ile uygula.`,
-        pending: { tool: "approve_pending_orders", args: { dryRun: false } },
-      }
+          .join("\n")}\n\nOnaylıyor musunuz?`,
+        { tool: "approve_pending_orders", args: { dryRun: false } }
+      )
     }
-    return { reply: `${data.updated} sipariş onaylandı (confirmed).`, pending: null }
+    return fmt(`${data.updated} sipariş onaylandı (confirmed).`)
   }
 
   if (tool === "list_companies") {
     const companies = (data.companies as { name: string; discountRate: number; creditLimit: number }[]) ?? []
-    if (!companies.length) return { reply: "Firma bulunamadı.", pending: null }
-    return {
-      reply: `Firmalar:\n${companies
+    if (!companies.length) return fmt("Firma bulunamadı.")
+    return fmt(
+      `Firmalar:\n${companies
         .map((c) => `• ${c.name} — %${c.discountRate} iskonto — limit ${formatMoney(c.creditLimit)}`)
         .join("\n")}`,
-      pending: null,
-    }
+      null,
+      {
+        choices: companies.slice(0, 10).map((c) => ({
+          id: c.name,
+          label: `${c.name} — %30 iskonto yap`,
+        })),
+      }
+    )
   }
 
   if (tool === "set_company_discount") {
     if (data.dryRun) {
-      return {
-        reply: `Firma iskontosu önizleme:\n• ${data.companyName}\n• %${data.oldRate} → %${data.newRate}\n\n“onayla” ile kaydet.`,
-        pending: {
+      return fmt(
+        `Firma iskontosu önizleme:\n• ${data.companyName}\n• %${data.oldRate} → %${data.newRate}\n\nKaydedilsin mi?`,
+        {
           tool: "set_company_discount",
           args: {
             companyQuery: data.companyName,
@@ -1019,24 +1213,73 @@ function formatToolResult(tool: string, result: ToolResult): { reply: string; pe
             resolvedId: data.companyId,
             dryRun: false,
           },
-        },
-      }
+        }
+      )
     }
-    return { reply: `${data.companyName} iskontosu %${data.newRate} olarak güncellendi.`, pending: null }
+    return fmt(`${data.companyName} iskontosu %${data.newRate} olarak güncellendi.`, null, {
+      undoAction: {
+        tool: "set_company_discount",
+        args: {
+          companyQuery: data.companyName,
+          discountRate: data.oldRate ?? 25,
+          resolvedId: data.companyId,
+          dryRun: false,
+        },
+      },
+    })
   }
 
   if (tool === "list_low_stock") {
     const products = (data.products as { sku: string; name: string; stock: number }[]) ?? []
-    if (!products.length) return { reply: `Stok ≤ ${data.threshold} olan ürün yok.`, pending: null }
-    return {
-      reply: `Düşük stok (≤${data.threshold}, ${data.count} ürün):\n${products
+    if (!products.length) return fmt(`Stok ≤ ${data.threshold} olan ürün yok.`)
+    return fmt(
+      `Düşük stok (≤${data.threshold}, ${data.count} ürün):\n${products
         .map((p) => `• ${p.sku} — ${p.name} — stok ${p.stock}`)
-        .join("\n")}`,
-      pending: null,
-    }
+        .join("\n")}`
+    )
   }
 
-  return { reply: JSON.stringify(data, null, 2), pending: null }
+  if (tool === "list_warehouses") {
+    const warehouses = (data.warehouses as { name: string; code: string; city: string; isActive: boolean }[]) ?? []
+    if (!warehouses.length) return fmt("Depo yok.")
+    return fmt(
+      `Depolar:\n${warehouses
+        .map((w) => `• ${w.name} (${w.code}) — ${w.city} — ${w.isActive ? "aktif" : "pasif"}`)
+        .join("\n")}`
+    )
+  }
+
+  if (tool === "list_recent_orders") {
+    const orders = (data.orders as { orderNumber: string; status: string; companyName: string; total: number }[]) ?? []
+    if (!orders.length) return fmt("Sipariş yok.")
+    return fmt(
+      `Son siparişler:\n${orders
+        .map((o) => `• ${o.orderNumber} — ${o.companyName} — ${o.status} — ${formatMoney(o.total)}`)
+        .join("\n")}`
+    )
+  }
+
+  if (tool === "list_users") {
+    const users = (data.users as { name: string; role: string; companyName: string; isActive: boolean }[]) ?? []
+    if (!users.length) return fmt("Kullanıcı yok.")
+    return fmt(
+      `Kullanıcılar:\n${users
+        .map((u) => `• ${u.name || "—"} — ${u.role} — ${u.companyName} — ${u.isActive ? "aktif" : "pasif"}`)
+        .join("\n")}`
+    )
+  }
+
+  if (tool === "list_invoices") {
+    const invoices = (data.invoices as { invoiceNumber: string; status: string; companyName: string; total: number }[]) ?? []
+    if (!invoices.length) return fmt("Fatura yok.")
+    return fmt(
+      `Faturalar:\n${invoices
+        .map((i) => `• ${i.invoiceNumber} — ${i.companyName} — ${i.status} — ${formatMoney(i.total)}`)
+        .join("\n")}`
+    )
+  }
+
+  return fmt(JSON.stringify(data, null, 2))
 }
 
 type ParsedIntent =
@@ -1087,11 +1330,67 @@ function parseIntent(raw: string): ParsedIntent {
   if (isCancel(text)) return { kind: "cancel" }
   if (/yardim|help|ne yapabilir|komutlar?|ornek/.test(n) || n === "?") return { kind: "help" }
 
-  // bare number or short pick while clarifying
-  if (/^\d{1,2}$/.test(text.trim()) || (/^[a-z0-9çğıöşü\s.\-&]{2,60}$/i.test(text) && text.split(/\s+/).length <= 6 && !/(zam|indirim|kampanya|bakim|siparis|firma|stok|liste|ozet)/.test(n))) {
-    // only treat as pick if it looks like a selection — handled with pending in runner
-    if (/^\d{1,2}$/.test(text.trim())) return { kind: "pick", value: text.trim() }
+  // Choice-chip shortcuts from UI
+  if (/^hepsini onayla/i.test(text)) {
+    return { kind: "tool", tool: "approve_pending_orders", args: { dryRun: true } }
   }
+  const chipZam = text.match(/^(.+?)\s*\(%?\s*(\d+(?:[.,]\d+)?)\s*%?\s*zam\)\s*$/i)
+  if (chipZam) {
+    return {
+      kind: "tool",
+      tool: "adjust_prices",
+      args: {
+        filterType: "category",
+        filterValue: chipZam[1].trim(),
+        percent: Number(String(chipZam[2]).replace(",", ".")),
+        dryRun: true,
+      },
+    }
+  }
+  const chipIndirim = text.match(/^(.+?)\s*\(%?\s*(\d+(?:[.,]\d+)?)\s*%?\s*indirim\)\s*$/i)
+  if (chipIndirim) {
+    return {
+      kind: "tool",
+      tool: "adjust_prices",
+      args: {
+        filterType: "brand",
+        filterValue: chipIndirim[1].trim(),
+        percent: -Math.abs(Number(String(chipIndirim[2]).replace(",", "."))),
+        dryRun: true,
+      },
+    }
+  }
+  const chipCampClose = text.match(/^(.+?)\s*[—\-]\s*kapat\s*$/i)
+  if (chipCampClose) {
+    return {
+      kind: "tool",
+      tool: "toggle_campaign",
+      args: { query: chipCampClose[1].trim(), isActive: false, dryRun: true },
+    }
+  }
+  const chipCampOpen = text.match(/^(.+?)\s*[—\-]\s*aç\s*$/i)
+  if (chipCampOpen) {
+    return {
+      kind: "tool",
+      tool: "toggle_campaign",
+      args: { query: chipCampOpen[1].trim(), isActive: true, dryRun: true },
+    }
+  }
+  const chipCompany = text.match(/^(.+?)\s*[—\-]\s*%?\s*(\d+(?:[.,]\d+)?)\s*%?\s*iskonto/i)
+  if (chipCompany) {
+    return {
+      kind: "tool",
+      tool: "set_company_discount",
+      args: {
+        companyQuery: chipCompany[1].trim(),
+        discountRate: Number(String(chipCompany[2]).replace(",", ".")),
+        dryRun: true,
+      },
+    }
+  }
+
+  // bare number for pick
+  if (/^\d{1,2}$/.test(text.trim())) return { kind: "pick", value: text.trim() }
 
   if (/kategori.*(liste|goster|neler)|^kategorileri?\b/.test(n)) {
     return { kind: "tool", tool: "list_categories", args: {} }
@@ -1101,6 +1400,18 @@ function parseIntent(raw: string): ParsedIntent {
   }
   if (/kampanya.*(liste|goster|neler)|^kampanyalari?\b/.test(n)) {
     return { kind: "tool", tool: "list_campaigns", args: {} }
+  }
+  if (/depo.*(liste|goster)|^depolar?\b/.test(n)) {
+    return { kind: "tool", tool: "list_warehouses", args: {} }
+  }
+  if (/kullanici.*(liste|goster)|^kullanicilari?\b/.test(n)) {
+    return { kind: "tool", tool: "list_users", args: {} }
+  }
+  if (/fatura.*(liste|goster)|^faturalari?\b/.test(n)) {
+    return { kind: "tool", tool: "list_invoices", args: {} }
+  }
+  if (/son\s*siparis|siparisleri?\s*(liste|goster)|^siparisler?\b/.test(n) && !/bekleyen|onay/.test(n)) {
+    return { kind: "tool", tool: "list_recent_orders", args: { limit: 15 } }
   }
   if (/(is\s*ozeti|ozet\s*ver|dashboard|rapor\s*ozet|genel\s*durum|ozet)/.test(n) && !/fiyat/.test(n)) {
     return { kind: "tool", tool: "get_business_summary", args: {} }
@@ -1284,19 +1595,44 @@ Sistem
 • Ürün ara: balata
 • Kategorileri / markaları listele
 
-Belirsiz isimlerde seçenek sunarım. Fiyat/kampanya/iskonto önce önizlenir → “onayla”.`
+Belirsiz isimlerde seçenek butonları çıkar. Fiyat/kampanya/iskonto önce önizlenir → Onayla / İptal. Uygulanan işlemlerde Geri al butonu olur.`
+
+type ChatResult = {
+  reply: string
+  actions: string[]
+  pendingAction: PendingAction | null
+  choices?: AssistantChoice[]
+  undoAction?: PendingAction | null
+}
+
+function fromFormatted(formatted: FormattedResult, actions: string[]): ChatResult {
+  return {
+    reply: formatted.reply,
+    actions,
+    pendingAction: formatted.pending,
+    choices: formatted.choices,
+    undoAction: formatted.undoAction ?? null,
+  }
+}
 
 async function handlePick(
   service: SupabaseClient,
   callerId: string,
   pending: PendingAction,
   value: string
-): Promise<{ reply: string; actions: string[]; pendingAction: PendingAction | null } | null> {
+): Promise<ChatResult | null> {
   if (pending.tool !== "_pick") return null
   const args = pending.args
   const options = (args.options as string[]) ?? []
   const optionIds = (args.optionIds as string[]) ?? []
   let chosen = value.trim()
+  // "1) Name" or "1. Name" from button
+  const numbered = chosen.match(/^(\d+)\s*[).:\-]?\s*(.*)$/)
+  if (numbered) {
+    const idx = Number(numbered[1])
+    if (idx >= 1 && idx <= options.length) chosen = options[idx - 1]
+    else if (numbered[2]) chosen = numbered[2]
+  }
   const asNum = Number(chosen)
   if (Number.isInteger(asNum) && asNum >= 1 && asNum <= options.length) {
     chosen = options[asNum - 1]
@@ -1306,9 +1642,10 @@ async function handlePick(
       .sort((a, b) => b.score - a.score)
     if (!ranked[0] || ranked[0].score < 40) {
       return {
-        reply: `Seçim anlaşılmadı. Şunlardan birini yazın:\n${options.map((o, i) => `${i + 1}) ${o}`).join("\n")}`,
+        reply: `Bunu mu demek istediniz? Aşağıdan seçin:`,
         actions: [],
         pendingAction: pending,
+        choices: pickChoices(options),
       }
     }
     chosen = ranked[0].o
@@ -1323,8 +1660,7 @@ async function handlePick(
       dryRun: true,
       resolved: true,
     })
-    const formatted = formatToolResult("adjust_prices", result)
-    return { reply: formatted.reply, actions: ["adjust_prices"], pendingAction: formatted.pending }
+    return fromFormatted(formatToolResult("adjust_prices", result), ["adjust_prices"])
   }
   if (pickKind === "company_discount") {
     const idx = options.indexOf(chosen)
@@ -1334,8 +1670,7 @@ async function handlePick(
       resolvedId: optionIds[idx],
       dryRun: true,
     })
-    const formatted = formatToolResult("set_company_discount", result)
-    return { reply: formatted.reply, actions: ["set_company_discount"], pendingAction: formatted.pending }
+    return fromFormatted(formatToolResult("set_company_discount", result), ["set_company_discount"])
   }
   if (pickKind === "campaign_toggle") {
     const result = await runAssistantTool(service, callerId, "toggle_campaign", {
@@ -1343,8 +1678,7 @@ async function handlePick(
       isActive: args.isActive,
       dryRun: true,
     })
-    const formatted = formatToolResult("toggle_campaign", result)
-    return { reply: formatted.reply, actions: ["toggle_campaign"], pendingAction: formatted.pending }
+    return fromFormatted(formatToolResult("toggle_campaign", result), ["toggle_campaign"])
   }
   return null
 }
@@ -1354,10 +1688,29 @@ export async function runAdminAssistantChat(opts: {
   callerId: string
   messages: { role: "user" | "assistant"; content: string }[]
   pendingAction?: PendingAction | null
-}): Promise<{ reply: string; actions: string[]; pendingAction: PendingAction | null }> {
+  undoAction?: PendingAction | null
+}): Promise<ChatResult> {
   const lastUser = [...opts.messages].reverse().find((m) => m.role === "user")
   if (!lastUser) {
     return { reply: HELP_TEXT, actions: [], pendingAction: opts.pendingAction ?? null }
+  }
+
+  // Undo last applied mutation
+  if (isUndo(lastUser.content)) {
+    if (!opts.undoAction) {
+      return { reply: "Geri alınacak son işlem yok.", actions: [], pendingAction: null }
+    }
+    const result = await runAssistantTool(
+      opts.service,
+      opts.callerId,
+      opts.undoAction.tool,
+      opts.undoAction.args
+    )
+    const formatted = formatToolResult(opts.undoAction.tool, result)
+    return {
+      ...fromFormatted(formatted, [opts.undoAction.tool]),
+      undoAction: null,
+    }
   }
 
   const intent = parseIntent(lastUser.content)
@@ -1368,20 +1721,13 @@ export async function runAdminAssistantChat(opts: {
   }
 
   if (intent.kind === "cancel") {
-    return { reply: "Bekleyen işlem iptal edildi.", actions, pendingAction: null }
+    return { reply: "Bekleyen işlem iptal edildi.", actions, pendingAction: null, choices: undefined, undoAction: opts.undoAction ?? null }
   }
 
-  // Pick / clarify
-  if (opts.pendingAction?.tool === "_pick" && (intent.kind === "pick" || intent.kind === "unknown" || intent.kind === "confirm")) {
+  if (opts.pendingAction?.tool === "_pick") {
     const value = intent.kind === "pick" ? intent.value : lastUser.content
     const handled = await handlePick(opts.service, opts.callerId, opts.pendingAction, value)
-    if (handled) return handled
-  }
-
-  // If pending pick and user typed a name-like pick
-  if (opts.pendingAction?.tool === "_pick" && intent.kind === "pick") {
-    const handled = await handlePick(opts.service, opts.callerId, opts.pendingAction, intent.value)
-    if (handled) return handled
+    if (handled) return { ...handled, undoAction: handled.undoAction ?? opts.undoAction ?? null }
   }
 
   if (intent.kind === "confirm") {
@@ -1390,6 +1736,7 @@ export async function runAdminAssistantChat(opts: {
         reply: "Onaylanacak işlem yok. Önce bir komut yazın.",
         actions,
         pendingAction: opts.pendingAction ?? null,
+        undoAction: opts.undoAction ?? null,
       }
     }
     const result = await runAssistantTool(
@@ -1399,30 +1746,19 @@ export async function runAdminAssistantChat(opts: {
       opts.pendingAction.args
     )
     actions.push(opts.pendingAction.tool)
-    const formatted = formatToolResult(opts.pendingAction.tool, result)
-    return { reply: formatted.reply, actions, pendingAction: formatted.pending }
-  }
-
-  // Soft pick: if we have pending _pick and user sent something
-  if (opts.pendingAction?.tool === "_pick") {
-    const handled = await handlePick(opts.service, opts.callerId, opts.pendingAction, lastUser.content)
-    if (handled) return handled
+    return fromFormatted(formatToolResult(opts.pendingAction.tool, result), actions)
   }
 
   if (intent.kind === "tool") {
     const result = await runAssistantTool(opts.service, opts.callerId, intent.tool, intent.args)
     actions.push(intent.tool)
-    const formatted = formatToolResult(intent.tool, result)
-    return { reply: formatted.reply, actions, pendingAction: formatted.pending }
-  }
-
-  if (intent.kind === "pick" && opts.pendingAction && opts.pendingAction.tool !== "_pick") {
-    // ignore stray pick
+    return fromFormatted(formatToolResult(intent.tool, result), actions)
   }
 
   return {
-    reply: `Komutu tam anlayamadım.\n\n${HELP_TEXT}`,
+    reply: `Komutu tam anlayamadım. Aşağıdaki örneklerden birini deneyin veya “komutlar” yazın.\n\n${HELP_TEXT}`,
     actions,
     pendingAction: opts.pendingAction ?? null,
+    undoAction: opts.undoAction ?? null,
   }
 }

@@ -14,6 +14,7 @@ export async function POST(request: Request) {
   let body: {
     messages?: { role: "user" | "assistant"; content: string }[]
     pendingAction?: PendingAction | null
+    undoAction?: PendingAction | null
   }
   try {
     body = await request.json()
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
       callerId: guard.callerId,
       messages: cleaned,
       pendingAction: body.pendingAction ?? null,
+      undoAction: body.undoAction ?? null,
     })
     return NextResponse.json(result)
   } catch (e) {
