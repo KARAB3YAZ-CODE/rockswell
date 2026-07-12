@@ -8,10 +8,17 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
-import { createSupportTicket, getMySupportTickets } from "@/lib/api"
+import {
+  createSupportTicket,
+  getMySupportTickets,
+  getSupportTicketMessages,
+  replySupportTicket,
+  type SupportTicket,
+  type SupportTicketMessage,
+} from "@/lib/api"
 import { useData } from "@/hooks/use-data"
 import { formatDate } from "@/lib/utils"
-import { MessageSquare, Send } from "lucide-react"
+import { MessageSquare, Send, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
 const CATEGORIES = [
@@ -26,7 +33,6 @@ const statusLabel: Record<string, { label: string; color: "info" | "success" | "
   open: { label: "Açık", color: "info" },
   in_progress: { label: "İşlemde", color: "warning" },
   closed: { label: "Kapalı", color: "default" },
-  resolved: { label: "Çözüldü", color: "success" },
 }
 
 export default function SupportPage() {
@@ -35,11 +41,29 @@ export default function SupportPage() {
   const [subject, setSubject] = useState("")
   const [message, setMessage] = useState("")
   const [submitting, setSubmitting] = useState(false)
-  const [sent, setSent] = useState(false)
+  const [selected, setSelected] = useState<SupportTicket | null>(null)
+  const [thread, setThread] = useState<SupportTicketMessage[]>([])
+  const [threadLoading, setThreadLoading] = useState(false)
+  const [reply, setReply] = useState("")
+  const [replying, setReplying] = useState(false)
+
   const { data: tickets, loading: ticketsLoading, refetch } = useData(
     () => (isAuthenticated ? getMySupportTickets() : Promise.resolve([])),
     [isAuthenticated]
   )
+
+  const openTicket = async (t: SupportTicket) => {
+    setSelected(t)
+    setThreadLoading(true)
+    try {
+      const msgs = await getSupportTicketMessages(t.id)
+      setThread(msgs)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Mesajlar yüklenemedi")
+    } finally {
+      setThreadLoading(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,16 +77,32 @@ export default function SupportPage() {
     }
     setSubmitting(true)
     try {
-      await createSupportTicket({ subject, category, message })
-      setSent(true)
+      const created = await createSupportTicket({ subject, category, message })
       setSubject("")
       setMessage("")
       toast.success("Destek talebiniz alındı")
       refetch()
+      await openTicket(created)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Talep oluşturulamadı")
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const sendReply = async () => {
+    if (!selected || !reply.trim()) return
+    setReplying(true)
+    try {
+      const msg = await replySupportTicket(selected.id, reply)
+      setThread((prev) => [...prev, msg])
+      setReply("")
+      toast.success("Yanıt gönderildi")
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Gönderilemedi")
+    } finally {
+      setReplying(false)
     }
   }
 
@@ -78,93 +118,139 @@ export default function SupportPage() {
 
         {!isAuthenticated ? (
           <GlassCard intensity="light" className="p-6 text-center space-y-3">
-            <MessageSquare size={40} className="mx-auto text-white/20" />
-            <p className="text-white/60">Destek talebi oluşturmak için giriş yapmanız gerekir.</p>
-            <Link href="/login">
-              <Button>Giriş Yap</Button>
-            </Link>
+            <p className="text-white/60">Destek talebi için giriş yapın</p>
+            <Link href="/login"><Button>Giriş Yap</Button></Link>
           </GlassCard>
-        ) : sent ? (
-          <GlassCard intensity="light" className="p-6 text-center space-y-3">
-            <MessageSquare size={40} className="mx-auto text-accent" />
-            <p className="text-white font-medium">Talebiniz alındı</p>
-            <p className="text-sm text-white/50">Ekibimiz en kısa sürede e-posta ile dönüş yapacaktır.</p>
-            <Button variant="secondary" onClick={() => setSent(false)}>Yeni talep</Button>
-          </GlassCard>
+        ) : selected ? (
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="inline-flex items-center gap-1.5 text-sm text-white/40 hover:text-white"
+            >
+              <ArrowLeft size={14} /> Taleplere dön
+            </button>
+            <GlassCard intensity="light" className="p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">{selected.subject}</h3>
+                  <p className="text-xs text-white/35 mt-0.5">{formatDate(selected.createdAt)}</p>
+                </div>
+                <Badge variant={statusLabel[selected.status]?.color ?? "default"} size="sm">
+                  {statusLabel[selected.status]?.label ?? selected.status}
+                </Badge>
+              </div>
+              {threadLoading ? (
+                <Skeleton className="h-24 w-full rounded-lg" />
+              ) : (
+                <div className="space-y-2 max-h-[420px] overflow-y-auto">
+                  {thread.length === 0 && (
+                    <p className="text-xs text-white/40 whitespace-pre-wrap">{selected.message}</p>
+                  )}
+                  {thread.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`rounded-xl p-3 text-sm ${
+                        m.isStaff
+                          ? "bg-accent/10 border border-accent/20 ml-4"
+                          : "bg-white/[0.03] border border-white/5 mr-4"
+                      }`}
+                    >
+                      <p className="text-[10px] text-white/35 mb-1">
+                        {m.isStaff ? "Rockswell" : m.authorName || "Siz"} · {formatDate(m.createdAt)}
+                      </p>
+                      <p className="text-white/80 whitespace-pre-wrap">{m.body}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {selected.status !== "closed" && (
+                <div className="flex gap-2 pt-2">
+                  <textarea
+                    rows={2}
+                    value={reply}
+                    onChange={(e) => setReply(e.target.value)}
+                    placeholder="Yanıt yazın…"
+                    className="flex-1 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 resize-none"
+                  />
+                  <Button size="sm" icon={<Send size={14} />} disabled={replying} onClick={sendReply}>
+                    {replying ? "…" : "Gönder"}
+                  </Button>
+                </div>
+              )}
+            </GlassCard>
+          </div>
         ) : (
-          <GlassCard intensity="light" className="p-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-1.5">Konu</label>
+          <>
+            <GlassCard intensity="light" className="p-5">
+              <form onSubmit={handleSubmit} className="space-y-3">
                 <div className="flex flex-wrap gap-2">
                   {CATEGORIES.map((c) => (
                     <button
                       key={c.id}
                       type="button"
                       onClick={() => setCategory(c.id)}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                      className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
                         category === c.id
                           ? "border-accent/40 bg-accent/10 text-accent"
-                          : "border-white/10 text-white/50 hover:text-white"
+                          : "border-white/10 text-white/50 hover:border-white/20"
                       }`}
                     >
                       {c.label}
                     </button>
                   ))}
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-1.5">Başlık</label>
                 <input
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Kısa özet"
+                  placeholder="Konu"
                   className="w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40"
-                  maxLength={120}
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-1.5">Mesaj</label>
                 <textarea
+                  rows={4}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Sorununuzu veya talebinizi yazın…"
-                  rows={5}
+                  placeholder="Mesajınız…"
                   className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 resize-none"
                 />
-              </div>
-              <Button type="submit" disabled={submitting} icon={<Send size={14} />}>
-                {submitting ? "Gönderiliyor…" : "Talep Gönder"}
-              </Button>
-            </form>
-          </GlassCard>
-        )}
+                <Button type="submit" disabled={submitting} icon={<Send size={14} />}>
+                  {submitting ? "Gönderiliyor…" : "Talep oluştur"}
+                </Button>
+              </form>
+            </GlassCard>
 
-        {isAuthenticated && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-white/70">Taleplerim</h3>
-            {ticketsLoading ? (
-              <Skeleton className="h-16 w-full rounded-xl" />
-            ) : (tickets?.length ?? 0) === 0 ? (
-              <p className="text-xs text-white/35 py-2">Henüz destek talebiniz yok.</p>
-            ) : (
-              tickets!.map((t) => {
-                const st = statusLabel[t.status] ?? statusLabel.open
-                return (
-                  <GlassCard key={t.id} intensity="light" className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{t.subject}</p>
-                        <p className="text-xs text-white/40 mt-0.5">{formatDate(t.createdAt)} · {t.category}</p>
-                        <p className="text-xs text-white/50 mt-1 line-clamp-2">{t.message}</p>
-                      </div>
-                      <Badge variant={st.color} size="sm">{st.label}</Badge>
-                    </div>
-                  </GlassCard>
-                )
-              })
-            )}
-          </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+                <MessageSquare size={14} className="text-accent" /> Talepleriniz
+              </h3>
+              {ticketsLoading ? (
+                <Skeleton className="h-24 w-full rounded-xl" />
+              ) : !tickets?.length ? (
+                <p className="text-xs text-white/35">Henüz destek talebi yok</p>
+              ) : (
+                <div className="space-y-2">
+                  {tickets.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => openTicket(t)}
+                      className="w-full text-left"
+                    >
+                      <GlassCard intensity="light" className="p-4 hover:bg-white/[0.03] transition-colors">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm text-white truncate">{t.subject}</p>
+                          <Badge variant={statusLabel[t.status]?.color ?? "default"} size="sm">
+                            {statusLabel[t.status]?.label ?? t.status}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-white/35 mt-1">{formatDate(t.createdAt)}</p>
+                      </GlassCard>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </Shell>

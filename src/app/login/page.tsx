@@ -13,12 +13,13 @@ import { adminAbsoluteUrl } from "@/lib/admin-host"
 
 export default function LoginPage() {
   const router = useRouter()
-  const { isAuthenticated, isAdmin, login, loading } = useAuth()
+  const { isAuthenticated, isAdmin, login, completeMfaLogin, loading } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [mfaCode, setMfaCode] = useState("")
   const [rememberMe, setRememberMe] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [mode, setMode] = useState<"login" | "forgot">("login")
+  const [mode, setMode] = useState<"login" | "forgot" | "mfa">("login")
   const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
@@ -70,7 +71,30 @@ export default function LoginPage() {
       }
       toast.success("Giriş başarılı")
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Giriş başarısız")
+      if (err instanceof Error && (err.name === "MfaRequiredError" || err.message === "MFA_REQUIRED")) {
+        setMode("mfa")
+        setMfaCode("")
+        toast.success("Doğrulama kodunu girin")
+      } else {
+        toast.error(err instanceof Error ? err.message : "Giriş başarısız")
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleMfa(e: React.FormEvent) {
+    e.preventDefault()
+    if (!/^\d{6}$/.test(mfaCode.trim())) {
+      toast.error("6 haneli kod girin")
+      return
+    }
+    setSubmitting(true)
+    try {
+      await completeMfaLogin(mfaCode.trim())
+      toast.success("Giriş başarılı")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Kod hatalı")
     } finally {
       setSubmitting(false)
     }
@@ -113,16 +137,43 @@ export default function LoginPage() {
             <span className="text-lg font-bold text-white">ROCKSWELL</span>
           </Link>
           <h1 className="text-2xl font-bold text-white">
-            {mode === "forgot" ? "Şifre Sıfırlama" : "Bayi Girişi"}
+            {mode === "forgot" ? "Şifre Sıfırlama" : mode === "mfa" ? "Doğrulama" : "Bayi Girişi"}
           </h1>
           <p className="text-sm text-white/40 mt-1">
             {mode === "forgot"
               ? "E-posta adresinize sıfırlama bağlantısı göndereceğiz"
-              : "B2B otomotiv yedek parça platformuna hoş geldiniz"}
+              : mode === "mfa"
+                ? "Authenticator uygulamanızdaki 6 haneli kodu girin"
+                : "B2B otomotiv yedek parça platformuna hoş geldiniz"}
           </p>
         </div>
 
-        {mode === "forgot" ? (
+        {mode === "mfa" ? (
+          <form onSubmit={handleMfa} className="bg-card border border-border rounded-2xl p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1.5">Doğrulama kodu</label>
+              <input
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+                placeholder="000000"
+                maxLength={6}
+                inputMode="numeric"
+                className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all font-mono tracking-widest text-center"
+                autoComplete="one-time-code"
+              />
+            </div>
+            <Button type="submit" className="w-full" size="lg" disabled={submitting}>
+              {submitting ? "Doğrulanıyor..." : "Doğrula"}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setMode("login")}
+              className="w-full text-sm text-white/40 hover:text-white/60 transition-colors"
+            >
+              Geri
+            </button>
+          </form>
+        ) : mode === "forgot" ? (
           <form onSubmit={handleForgot} className="bg-card border border-border rounded-2xl p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-white/70 mb-1.5">E-posta</label>

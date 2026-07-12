@@ -14,6 +14,7 @@ interface AuthContextType {
   isAuthenticated: boolean
   isAdmin: boolean
   login: (email: string, password: string) => Promise<void>
+  completeMfaLogin: (code: string) => Promise<void>
   register: (data: RegisterData) => Promise<void>
   logout: () => Promise<void>
 }
@@ -95,6 +96,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentCompany(company)
   }, [setCurrentUser, setCurrentCompany])
 
+  const completeMfaLogin = useCallback(async (code: string) => {
+    const user = await api.verifyMfaLogin(code)
+    const company = await api.getCurrentCompany()
+    loadedUserIdRef.current = user.id
+    setCurrentUser(user)
+    setCurrentCompany(company)
+  }, [setCurrentUser, setCurrentCompany])
+
   const register = useCallback(async (data: RegisterData) => {
     await api.register(data)
   }, [])
@@ -116,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!currentUser,
         isAdmin: currentUser?.role === "admin",
         login,
+        completeMfaLogin,
         register,
         logout,
       }}

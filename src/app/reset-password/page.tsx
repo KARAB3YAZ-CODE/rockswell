@@ -8,6 +8,7 @@ import toast from "react-hot-toast"
 import { Button } from "@/components/ui/button"
 import { Glow } from "@/components/effects/glow"
 import { supabase } from "@/lib/supabase"
+import { MIN_PASSWORD_LENGTH } from "@/lib/password"
 import { CheckCircle2, KeyRound } from "lucide-react"
 
 type Phase = "checking" | "ready" | "invalid" | "done"
@@ -44,8 +45,8 @@ export default function ResetPasswordPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (password.length < 6) {
-      toast.error("Şifre en az 6 karakter olmalıdır")
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      toast.error(`Şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalıdır`)
       return
     }
     if (password !== confirm) {

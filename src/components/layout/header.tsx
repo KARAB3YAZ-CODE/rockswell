@@ -29,7 +29,7 @@ export function Header() {
   const { isAdmin, logout, user, company } = useAuth()
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const markAsReadLocal = useUIStore((s) => s.markAsRead)
-  const addNotification = useUIStore((s) => s.addNotification)
+  const setNotifications = useUIStore((s) => s.setNotifications)
   const notifications = useUIStore((s) => s.notifications)
 
   const markAsRead = (id: string) => {
@@ -62,11 +62,11 @@ export function Header() {
   const { products } = useProducts()
   const { notifications: apiNotifications } = useNotifications()
 
+  // Always sync from API (merge by id; server is_read wins)
   useEffect(() => {
-    if (notifications.length === 0 && apiNotifications.length > 0) {
-      apiNotifications.forEach((n) => addNotification(n))
-    }
-  }, [apiNotifications, notifications.length, addNotification])
+    if (!apiNotifications) return
+    setNotifications(apiNotifications)
+  }, [apiNotifications, setNotifications])
 
   const unreadCount = notifications.filter((n) => !n.read).length
   const totalCartItems = cartItems.reduce((acc, i) => acc + i.quantity, 0)

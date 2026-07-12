@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServiceClient } from "@/lib/supabase-admin"
 import { mapUser } from "@/lib/mappers"
+import { MIN_PASSWORD_LENGTH } from "@/lib/password"
 
 export async function POST(request: Request) {
   try {
@@ -11,8 +12,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Gerekli alanlar eksik" }, { status: 400 })
     }
 
-    if (password.length < 6) {
-      return NextResponse.json({ error: "Şifre en az 6 karakter olmalıdır" }, { status: 400 })
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return NextResponse.json(
+        { error: `Şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalıdır` },
+        { status: 400 }
+      )
     }
 
     const service = getServiceClient()

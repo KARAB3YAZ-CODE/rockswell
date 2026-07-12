@@ -16,6 +16,7 @@ import {
   DEFAULT_DISCOUNT_RATE,
   HAVALE_EXTRA_DISCOUNT_RATE,
   TAX_RATE,
+  dealerUnitPrice,
 } from "@/lib/pricing"
 import { createOrder, getCampaigns, getCustomerDiscountRate, getMyCreditSnapshot, getProducts, getSiteSettings, type PaymentMethod } from "@/lib/api"
 import { allocateWarehouses } from "@/lib/warehouse-alloc"
@@ -331,7 +332,18 @@ export default function CartPage() {
                         <Link href={`/products/${item.productId}`}>
                           <h3 className="text-sm font-medium text-white mt-0.5 hover:text-accent transition-colors line-clamp-2">{item.productName}</h3>
                         </Link>
-                        <p className="text-xs text-white/40 mt-0.5">{formatPrice(item.unitPrice)} / adet</p>
+                        <p className="text-xs text-white/40 mt-0.5">
+                          {item.priceLocked || discountRate <= 0 ? (
+                            <>{formatPrice(item.unitPrice)} / adet</>
+                          ) : (
+                            <>
+                              <span className="text-white/70">
+                                {formatPrice(dealerUnitPrice(item.unitPrice, discountRate, false))} / adet
+                              </span>
+                              <span className="ml-1.5 line-through opacity-50">{formatPrice(item.unitPrice)}</span>
+                            </>
+                          )}
+                        </p>
                         {(item.warehouseOptions?.length ?? 0) > 0 ? (
                           <div className="mt-2 flex items-center gap-2">
                             <Truck size={12} className="text-white/30 shrink-0" />
@@ -371,7 +383,13 @@ export default function CartPage() {
                             <Plus size={14} />
                           </button>
                         </div>
-                        <p className="text-sm font-bold text-white mt-2">{formatPrice(item.unitPrice * item.quantity)}</p>
+                        <p className="text-sm font-bold text-white mt-2">
+                          {formatPrice(
+                            (item.priceLocked
+                              ? item.unitPrice
+                              : dealerUnitPrice(item.unitPrice, discountRate, false)) * item.quantity
+                          )}
+                        </p>
                       </div>
                       <button
                         onClick={() => removeItem(item.productId, item.warehouseId)}

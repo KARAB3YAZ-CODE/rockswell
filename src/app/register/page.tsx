@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Glow } from "@/components/effects/glow"
 import { useAuth } from "@/lib/auth"
 import type { RegisterData } from "@/lib/auth"
+import { MIN_PASSWORD_LENGTH } from "@/lib/password"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -35,8 +36,8 @@ export default function RegisterPage() {
       toast.error("Lütfen gerekli alanları doldurun")
       return
     }
-    if (form.password.length < 6) {
-      toast.error("Şifre en az 6 karakter olmalıdır")
+    if (form.password.length < MIN_PASSWORD_LENGTH) {
+      toast.error(`Şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalıdır`)
       return
     }
     if (form.password !== form.confirmPassword) {
@@ -158,7 +159,7 @@ export default function RegisterPage() {
                 type="password"
                 value={form.password}
                 onChange={(e) => update("password", e.target.value)}
-                placeholder="En az 6 karakter"
+                placeholder={`En az ${MIN_PASSWORD_LENGTH} karakter`}
                 className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10 transition-all"
                 autoComplete="new-password"
               />

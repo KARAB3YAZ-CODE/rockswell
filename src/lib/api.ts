@@ -13,7 +13,7 @@ import {
 import { DEFAULT_DISCOUNT_RATE, resolveDiscountRate, toOrderPricingFromLines, type VolumeDiscountTier } from "./pricing"
 import { createInvoiceForOrder } from "./invoices"
 import { applyStockMovement, assertStockAvailable, orderItemsToStockLines, syncWarehouseUsedCapacity } from "./inventory"
-import { assertCreditAllowsOrder, assertOpenAccountPeriodClear, getCompanyCreditSnapshot, OPEN_ACCOUNT_METHOD } from "./credit"
+import { getCompanyCreditSnapshot, OPEN_ACCOUNT_METHOD } from "./credit"
 import { decodeVin, looksLikeVin } from "./vin"
 import { canPlaceOrder, canViewCredit, canViewInvoices } from "./permissions"
 import type {
@@ -192,7 +192,20 @@ export async function login(email: string, password: string): Promise<User> {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) err("E-posta veya şifre hatalı")
 
-  const user = await fetchProfile(data.user.id, data.user.email ?? "")
+  // MFA enrolled: password alone is aal1 — caller must complete TOTP challenge
+  try {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2") {
+      const mfaErr = new Error("MFA_REQUIRED")
+      mfaErr.name = "MfaRequiredError"
+      throw mfaErr
+    }
+  } catch (e) {
+    if (e instanceof Error && e.name === "MfaRequiredError") throw e
+    /* MFA not configured on project — continue */
+  }
+
+  const user = await fetchProfile(data.user!.id, data.user!.email ?? "")
   const company = await assertAccountAllowed(user)
 
   await supabase
@@ -208,6 +221,39 @@ export async function login(email: string, password: string): Promise<User> {
     _currentCompany.users = [user]
   }
 
+  return user
+}
+
+/** Complete MFA challenge after password sign-in (aal1 → aal2). */
+export async function verifyMfaLogin(code: string): Promise<User> {
+  const trimmed = code.replace(/\s+/g, "")
+  if (!/^\d{6}$/.test(trimmed)) err("6 haneli doğrulama kodu girin")
+
+  const { data: factors, error: fErr } = await supabase.auth.mfa.listFactors()
+  if (fErr) err(fErr.message)
+  const totp = factors?.totp?.[0]
+  if (!totp) err("Kayıtlı doğrulayıcı bulunamadı")
+
+  const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({ factorId: totp.id })
+  if (cErr || !challenge) err(cErr?.message ?? "Doğrulama başlatılamadı")
+
+  const { error: vErr } = await supabase.auth.mfa.verify({
+    factorId: totp.id,
+    challengeId: challenge.id,
+    code: trimmed,
+  })
+  if (vErr) err(vErr.message || "Kod hatalı")
+
+  const { data: { user: authUser } } = await supabase.auth.getUser()
+  if (!authUser) err("Oturum bulunamadı")
+
+  const user = await fetchProfile(authUser.id, authUser.email ?? "")
+  const company = await assertAccountAllowed(user)
+  _currentUser = user
+  if (company) {
+    _currentCompany = company
+    _currentCompany.users = [user]
+  }
   return user
 }
 
@@ -287,7 +333,8 @@ export async function updateProfile(input: UpdateProfileInput): Promise<User> {
 }
 
 export async function changePassword(newPassword: string): Promise<void> {
-  if (newPassword.length < 6) err("Şifre en az 6 karakter olmalıdır")
+  const { assertPasswordPolicy } = await import("./password")
+  assertPasswordPolicy(newPassword)
   const { error } = await supabase.auth.updateUser({ password: newPassword })
   if (error) err(error.message)
 }
@@ -307,20 +354,44 @@ export async function createSupportTicket(input: {
   subject: string
   category: string
   message: string
-}): Promise<void> {
+}): Promise<SupportTicket> {
   const user = await getCurrentUser()
   const subject = input.subject.trim()
   const message = input.message.trim()
   if (!subject || !message) err("Konu ve mesaj gerekli")
-  const { error } = await supabase.from("support_tickets").insert({
-    user_id: user.id,
-    company_id: user.companyId || null,
-    subject,
-    category: input.category || "genel",
-    message,
-    status: "open",
-  })
-  if (error) err(error.message)
+  const { data, error } = await supabase
+    .from("support_tickets")
+    .insert({
+      user_id: user.id,
+      company_id: user.companyId || null,
+      subject,
+      category: input.category || "genel",
+      message,
+      status: "open",
+    })
+    .select("id, subject, category, message, status, created_at")
+    .single()
+  if (error || !data) err(error?.message ?? "Talep oluşturulamadı")
+
+  try {
+    await supabase.from("support_ticket_messages").insert({
+      ticket_id: data.id,
+      user_id: user.id,
+      body: message,
+      is_staff: user.role === "admin",
+    })
+  } catch {
+    /* best-effort first message */
+  }
+
+  return {
+    id: String(data.id),
+    subject: String(data.subject),
+    category: String(data.category ?? "genel"),
+    message: String(data.message),
+    status: String(data.status ?? "open"),
+    createdAt: String(data.created_at),
+  }
 }
 
 export interface SupportTicket {
@@ -330,6 +401,16 @@ export interface SupportTicket {
   message: string
   status: string
   createdAt: string
+}
+
+export interface SupportTicketMessage {
+  id: string
+  ticketId: string
+  userId: string
+  body: string
+  isStaff: boolean
+  createdAt: string
+  authorName?: string
 }
 
 export async function getMySupportTickets(): Promise<SupportTicket[]> {
@@ -351,11 +432,82 @@ export async function getMySupportTickets(): Promise<SupportTicket[]> {
   }))
 }
 
+export async function getSupportTicketMessages(ticketId: string): Promise<SupportTicketMessage[]> {
+  await requireAuth()
+  const { data, error } = await supabase
+    .from("support_ticket_messages")
+    .select("id, ticket_id, user_id, body, is_staff, created_at, profiles(name, surname)")
+    .eq("ticket_id", ticketId)
+    .order("created_at", { ascending: true })
+  if (error) err(error.message)
+  return (data ?? []).map((row) => {
+    const profile = row.profiles as { name?: string; surname?: string } | null
+    const name = [profile?.name, profile?.surname].filter(Boolean).join(" ").trim()
+    return {
+      id: String(row.id),
+      ticketId: String(row.ticket_id),
+      userId: String(row.user_id),
+      body: String(row.body),
+      isStaff: Boolean(row.is_staff),
+      createdAt: String(row.created_at),
+      authorName: name || undefined,
+    }
+  })
+}
+
+export async function replySupportTicket(ticketId: string, body: string): Promise<SupportTicketMessage> {
+  const user = await getCurrentUser()
+  const text = body.trim()
+  if (!text) err("Mesaj gerekli")
+
+  const { data: ticket, error: tErr } = await supabase
+    .from("support_tickets")
+    .select("id, user_id, status")
+    .eq("id", ticketId)
+    .single()
+  if (tErr || !ticket) err(tErr?.message ?? "Talep bulunamadı")
+
+  const isStaff = user.role === "admin"
+  if (!isStaff && String(ticket.user_id) !== user.id) err("Bu talebe erişiminiz yok")
+  if (!isStaff && String(ticket.status) === "closed") err("Kapalı talebe yanıt yazılamaz")
+
+  const { data, error } = await supabase
+    .from("support_ticket_messages")
+    .insert({
+      ticket_id: ticketId,
+      user_id: user.id,
+      body: text,
+      is_staff: isStaff,
+    })
+    .select("id, ticket_id, user_id, body, is_staff, created_at")
+    .single()
+  if (error || !data) err(error?.message ?? "Yanıt gönderilemedi")
+
+  if (isStaff && String(ticket.status) === "open") {
+    await supabase.from("support_tickets").update({ status: "in_progress" }).eq("id", ticketId)
+  } else if (!isStaff && String(ticket.status) === "closed") {
+    /* blocked above */
+  } else if (!isStaff && String(ticket.status) !== "open") {
+    await supabase.from("support_tickets").update({ status: "open" }).eq("id", ticketId)
+  }
+
+  return {
+    id: String(data.id),
+    ticketId: String(data.ticket_id),
+    userId: String(data.user_id),
+    body: String(data.body),
+    isStaff: Boolean(data.is_staff),
+    createdAt: String(data.created_at),
+    authorName: `${user.name} ${user.surname}`.trim(),
+  }
+}
+
 export interface AdminSupportTicket extends SupportTicket {
   userId: string
   companyId?: string
   companyName?: string
   userEmail?: string
+  userName?: string
 }
 
 export async function getAllSupportTickets(): Promise<AdminSupportTicket[]> {
@@ -375,12 +527,17 @@ export async function getAllSupportTickets(): Promise<AdminSupportTicket[]> {
       ? supabase.from("companies").select("id, name").in("id", companyIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     userIds.length
-      ? supabase.from("profiles").select("id, email").in("id", userIds)
-      : Promise.resolve({ data: [] as { id: string; email: string }[] }),
+      ? supabase.from("profiles").select("id, name, surname").in("id", userIds)
+      : Promise.resolve({ data: [] as { id: string; name: string; surname: string }[] }),
   ])
 
   const companyMap = new Map((companies ?? []).map((c) => [String(c.id), String(c.name)]))
-  const emailMap = new Map((profiles ?? []).map((p) => [String(p.id), String(p.email)]))
+  const nameMap = new Map(
+    (profiles ?? []).map((p) => [
+      String(p.id),
+      `${p.name ?? ""} ${p.surname ?? ""}`.trim(),
+    ])
+  )
 
   return (data ?? []).map((row) => ({
     id: String(row.id),
@@ -392,7 +549,7 @@ export async function getAllSupportTickets(): Promise<AdminSupportTicket[]> {
     userId: String(row.user_id),
     companyId: row.company_id ? String(row.company_id) : undefined,
     companyName: row.company_id ? companyMap.get(String(row.company_id)) : undefined,
-    userEmail: emailMap.get(String(row.user_id)),
+    userName: nameMap.get(String(row.user_id)),
   }))
 }
 
@@ -841,11 +998,13 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
   const isOpenAccount = input.paymentMethod === OPEN_ACCOUNT_METHOD
   const needsApproval = !input.asQuotation && !isOnline // havale + açık hesap
 
-  // Açık hesap: dönem borcu (ayın 15'i) + kredi limiti. Havale/EFT kredi kullanmaz.
+  // Açık hesap: dönem borcu + kredi limiti (DB lock — TOCTOU koruması)
   if (!input.asQuotation && isOpenAccount && user.companyId) {
-    const snap = await getCompanyCreditSnapshot(user.companyId)
-    assertOpenAccountPeriodClear(snap)
-    assertCreditAllowsOrder(snap, Number(pricing.grandTotal ?? 0))
+    const { error: creditErr } = await supabase.rpc("assert_open_account_credit", {
+      p_company_id: user.companyId,
+      p_order_amount: Number(pricing.grandTotal ?? 0),
+    })
+    if (creditErr) err(creditErr.message)
   }
 
   const nowIso = new Date().toISOString()

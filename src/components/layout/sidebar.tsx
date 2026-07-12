@@ -13,7 +13,7 @@ import {
   LayoutDashboard, ShoppingBag, Package,
   FileText, Settings, HelpCircle, LogOut,
   ChevronLeft, MessageSquare, ClipboardList, Percent,
-  ChevronDown, Shield, ExternalLink, Building2, BarChart3, Wallet, X,
+  ChevronDown, Shield, ExternalLink, Building2, BarChart3, Wallet, X, Users,
 } from "lucide-react"
 
 interface NavItem {
@@ -51,6 +51,7 @@ const customerNav: NavItem[] = [
   { label: "Kampanyalar", icon: <Percent size={20} />, href: "/account/campaigns" },
   { label: "Raporlar", icon: <BarChart3 size={20} />, href: "/account/reports" },
   { label: "Destek", icon: <MessageSquare size={20} />, href: "/account/support" },
+  { label: "Takım", icon: <Users size={20} />, href: "/account/team" },
 ]
 
 const bottomItems: NavItem[] = [
@@ -68,10 +69,16 @@ export function Sidebar() {
   const navItems = useMemo(() => {
     if (!user) return customerNav
     const allowed = allowedNavHrefs(user.role)
-    if (allowed === "all") return customerNav
-    return customerNav.filter((item) =>
-      allowed.some((href) => item.href === href || item.href.startsWith(href))
-    )
+    let items = allowed === "all"
+      ? customerNav
+      : customerNav.filter((item) =>
+          allowed.some((href) => item.href === href || item.href.startsWith(href))
+        )
+    // Takım yalnızca canManageUsers
+    if (user.role !== "company_admin" && user.role !== "admin") {
+      items = items.filter((item) => item.href !== "/account/team")
+    }
+    return items
   }, [user])
 
   useEffect(() => {

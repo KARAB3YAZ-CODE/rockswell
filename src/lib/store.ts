@@ -157,6 +157,7 @@ interface UIStore {
   toggleSidebar: () => void
   notifications: Notification[]
   addNotification: (notification: Notification) => void
+  setNotifications: (notifications: Notification[]) => void
   markAsRead: (id: string) => void
   clearNotifications: () => void
   currentUser: User | null
@@ -176,6 +177,7 @@ export const useUIStore = create<UIStore>((set) => ({
         ? state
         : { notifications: [notification, ...state.notifications] }
     ),
+  setNotifications: (notifications) => set({ notifications }),
   markAsRead: (id) =>
     set((state) => ({
       notifications: state.notifications.map((n) =>

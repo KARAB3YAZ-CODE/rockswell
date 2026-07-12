@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth"
 import { useUIStore } from "@/lib/store"
 import { updateProfile, changePassword } from "@/lib/api"
-import { Key, Save } from "lucide-react"
+import { supabase } from "@/lib/supabase"
+import { MIN_PASSWORD_LENGTH, passwordPolicyHint } from "@/lib/password"
+import { Key, Save, Shield } from "lucide-react"
 
 const inputCls = "w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-accent/40 disabled:opacity-50"
 
@@ -26,6 +28,12 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
 
+  const [mfaFactors, setMfaFactors] = useState<{ id: string; friendly_name?: string }[]>([])
+  const [enrollQr, setEnrollQr] = useState<string | null>(null)
+  const [enrollFactorId, setEnrollFactorId] = useState<string | null>(null)
+  const [enrollCode, setEnrollCode] = useState("")
+  const [mfaBusy, setMfaBusy] = useState(false)
+
   useEffect(() => {
     if (user) {
       setName(user.name)
@@ -33,6 +41,19 @@ export default function SettingsPage() {
       setPhone(user.phone)
     }
   }, [user])
+
+  const refreshMfa = async () => {
+    try {
+      const { data } = await supabase.auth.mfa.listFactors()
+      setMfaFactors((data?.totp ?? []).map((f) => ({ id: f.id, friendly_name: f.friendly_name })))
+    } catch {
+      setMfaFactors([])
+    }
+  }
+
+  useEffect(() => {
+    if (user) void refreshMfa()
+  }, [user?.id])
 
   const handleSaveProfile = async () => {
     if (!name.trim() || !surname.trim()) {
@@ -52,8 +73,8 @@ export default function SettingsPage() {
   }
 
   const handleChangePassword = async () => {
-    if (newPassword.length < 6) {
-      toast.error("Şifre en az 6 karakter olmalıdır")
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      toast.error(`Şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalıdır`)
       return
     }
     if (newPassword !== confirmPassword) {
@@ -70,6 +91,68 @@ export default function SettingsPage() {
       toast.error(e instanceof Error ? e.message : "Şifre güncellenemedi")
     } finally {
       setSavingPassword(false)
+    }
+  }
+
+  const startEnroll = async () => {
+    setMfaBusy(true)
+    try {
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: "Authenticator",
+      })
+      if (error) throw error
+      setEnrollFactorId(data.id)
+      setEnrollQr(data.totp.qr_code)
+      toast.success("QR kodu authenticator uygulamanızla tarayın")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "MFA etkinleştirilemedi (projede TOTP açık olmalı)")
+    } finally {
+      setMfaBusy(false)
+    }
+  }
+
+  const confirmEnroll = async () => {
+    if (!enrollFactorId || !/^\d{6}$/.test(enrollCode.trim())) {
+      toast.error("6 haneli kod girin")
+      return
+    }
+    setMfaBusy(true)
+    try {
+      const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
+        factorId: enrollFactorId,
+      })
+      if (cErr || !challenge) throw cErr ?? new Error("Challenge başarısız")
+      const { error: vErr } = await supabase.auth.mfa.verify({
+        factorId: enrollFactorId,
+        challengeId: challenge.id,
+        code: enrollCode.trim(),
+      })
+      if (vErr) throw vErr
+      toast.success("İki adımlı doğrulama açıldı")
+      setEnrollQr(null)
+      setEnrollFactorId(null)
+      setEnrollCode("")
+      await refreshMfa()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Doğrulama başarısız")
+    } finally {
+      setMfaBusy(false)
+    }
+  }
+
+  const unenroll = async (factorId: string) => {
+    if (!window.confirm("İki adımlı doğrulamayı kapatmak istiyor musunuz?")) return
+    setMfaBusy(true)
+    try {
+      const { error } = await supabase.auth.mfa.unenroll({ factorId })
+      if (error) throw error
+      toast.success("MFA kapatıldı")
+      await refreshMfa()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kapatılamadı")
+    } finally {
+      setMfaBusy(false)
     }
   }
 
@@ -135,17 +218,80 @@ export default function SettingsPage() {
           </h3>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-white/40">Yeni Şifre</label>
-              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="En az 6 karakter" className={`${inputCls} mt-1`} />
+              <label className="text-xs text-white/40">Yeni şifre</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder={passwordPolicyHint()}
+                className={`${inputCls} mt-1`}
+              />
             </div>
             <div>
-              <label className="text-xs text-white/40">Yeni Şifre (Tekrar)</label>
-              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" className={`${inputCls} mt-1`} />
+              <label className="text-xs text-white/40">Şifre tekrar</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className={`${inputCls} mt-1`}
+              />
             </div>
           </div>
-          <Button variant="secondary" size="sm" onClick={handleChangePassword} disabled={savingPassword}>
-            {savingPassword ? "Güncelleniyor..." : "Şifreyi Güncelle"}
+          <Button size="sm" onClick={handleChangePassword} disabled={savingPassword}>
+            {savingPassword ? "Kaydediliyor..." : "Şifreyi Güncelle"}
           </Button>
+        </GlassCard>
+
+        <GlassCard intensity="light" className="p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Shield size={14} className="text-accent" /> İki adımlı doğrulama (TOTP)
+          </h3>
+          <p className="text-xs text-white/40">
+            Authenticator uygulaması (Google Authenticator, 1Password vb.) ile girişte ek kod isteyin.
+          </p>
+          {mfaFactors.length > 0 ? (
+            <div className="space-y-2">
+              {mfaFactors.map((f) => (
+                <div key={f.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-white/70">{f.friendly_name || "Authenticator"} · aktif</span>
+                  <Button size="sm" variant="secondary" disabled={mfaBusy} onClick={() => unenroll(f.id)}>
+                    Kapat
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : enrollQr ? (
+            <div className="space-y-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={enrollQr} alt="MFA QR" className="w-48 h-48 rounded-lg bg-white p-2" />
+              <input
+                value={enrollCode}
+                onChange={(e) => setEnrollCode(e.target.value)}
+                placeholder="Uygulamadaki 6 haneli kod"
+                className={inputCls}
+                maxLength={6}
+              />
+              <div className="flex gap-2">
+                <Button size="sm" disabled={mfaBusy} onClick={confirmEnroll}>
+                  Doğrula ve aç
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEnrollQr(null)
+                    setEnrollFactorId(null)
+                  }}
+                >
+                  Vazgeç
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" disabled={mfaBusy} onClick={startEnroll}>
+              MFA etkinleştir
+            </Button>
+          )}
         </GlassCard>
       </div>
     </Shell>
