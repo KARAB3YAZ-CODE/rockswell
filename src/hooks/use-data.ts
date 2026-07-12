@@ -137,7 +137,8 @@ export function useNotifications() {
     () => import("@/lib/api").then((m) => m.getNotifications()),
     []
   )
-  return { notifications: data || [], loading, error, refetch }
+  // Never return a fresh [] each render — that retriggers effects (Safari crash).
+  return { notifications: data, loading, error, refetch }
 }
 
 export function useWarehouses() {

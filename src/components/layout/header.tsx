@@ -62,20 +62,22 @@ export function Header() {
   const { products } = useProducts()
   const { notifications: apiNotifications } = useNotifications()
 
-  // Always sync from API (merge by id; server is_read wins)
+  // Sync from API once data arrives; skip while null (loading) to avoid loops
   useEffect(() => {
     if (!apiNotifications) return
     setNotifications(apiNotifications)
   }, [apiNotifications, setNotifications])
 
-  const unreadCount = notifications.filter((n) => !n.read).length
+  const unreadCount = (notifications ?? []).filter((n) => !n.read).length
   const totalCartItems = cartItems.reduce((acc, i) => acc + i.quantity, 0)
-  const creditPercent = stats ? (stats.currentBalance / stats.creditLimit) * 100 : 0
+  const creditPercent =
+    stats && stats.creditLimit > 0 ? (stats.currentBalance / stats.creditLimit) * 100 : 0
+  const productList = products ?? []
 
   const quickResults = useMemo(() => {
     if (!quickSku.trim()) return []
     const terms = quickSku.split(",").map((t) => t.trim()).filter(Boolean)
-    return products.filter((p) =>
+    return productList.filter((p) =>
       terms.some((t) => {
         const vin = decodeVin(t)
         if (vin?.make) {
@@ -94,7 +96,7 @@ export function Header() {
         )
       })
     ).slice(0, 8)
-  }, [products, quickSku])
+  }, [productList, quickSku])
 
   const addToQuickBatch = (product: Product) => {
     if (!productInStock(product)) {

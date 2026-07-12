@@ -177,7 +177,17 @@ export const useUIStore = create<UIStore>((set) => ({
         ? state
         : { notifications: [notification, ...state.notifications] }
     ),
-  setNotifications: (notifications) => set({ notifications }),
+  setNotifications: (notifications) =>
+    set((state) => {
+      const prev = state.notifications
+      if (
+        prev.length === notifications.length &&
+        prev.every((n, i) => n.id === notifications[i]?.id && n.read === notifications[i]?.read)
+      ) {
+        return state
+      }
+      return { notifications }
+    }),
   markAsRead: (id) =>
     set((state) => ({
       notifications: state.notifications.map((n) =>
